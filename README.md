@@ -14,13 +14,31 @@ toggled from the wrench menu bar icon. Optional dock icon ("Show in Dock").
 
 ## Install
 
-### Homebrew
+### Homebrew (recommended)
 
 ```sh
 brew install --cask aletisunil/tap/mactoolkit
 ```
 
-Upgrade later with `brew upgrade --cask mactoolkit`.
+Or tap once, then use the short name:
+
+```sh
+brew tap aletisunil/tap
+brew install --cask mactoolkit
+```
+
+Upgrade:
+
+```sh
+brew upgrade --cask mactoolkit
+```
+
+Uninstall:
+
+```sh
+brew uninstall --cask mactoolkit        # remove the app
+brew uninstall --zap --cask mactoolkit  # also remove settings/caches
+```
 
 ### Manual
 
@@ -28,6 +46,9 @@ Download the latest `macToolKit.dmg` from
 [Releases](https://github.com/aletisunil/macToolKit/releases), open it and
 drag macToolKit to Applications. The app is Developer ID signed and
 notarized — no Gatekeeper warnings.
+
+After installing either way, see [First-run setup](#first-run-setup) for the
+Finder-extension and Accessibility permissions each tool needs.
 
 ## Build
 
