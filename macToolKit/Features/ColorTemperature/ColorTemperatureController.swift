@@ -139,6 +139,10 @@ final class ColorTemperatureController: NSObject, ObservableObject, CLLocationMa
     // MARK: Display + wake reapply
 
     private func registerForDisplayChanges() {
+        // Registered once for the controller's lifetime; applyNow() is a no-op
+        // while stopped, so the observers are harmless when the feature is off.
+        guard !reconfigCallbackRegistered else { return }
+        reconfigCallbackRegistered = true
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(systemDidWake),
             name: NSWorkspace.didWakeNotification, object: nil)

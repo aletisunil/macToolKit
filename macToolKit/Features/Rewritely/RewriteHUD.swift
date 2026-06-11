@@ -7,6 +7,9 @@ final class RewriteHUD {
     static let shared = RewriteHUD()
 
     private var panel: NSPanel?
+    /// Bumped on every show/hide so a pending flash hide can't take down a
+    /// panel that was shown after it was scheduled.
+    private var generation = 0
 
     func show(_ text: String) {
         hide()
@@ -34,12 +37,15 @@ final class RewriteHUD {
 
     func flash(_ text: String, seconds: TimeInterval = 1.6) {
         show(text)
+        let shown = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            self?.hide()
+            guard let self, self.generation == shown else { return }
+            self.hide()
         }
     }
 
     func hide() {
+        generation += 1
         panel?.orderOut(nil)
         panel = nil
     }

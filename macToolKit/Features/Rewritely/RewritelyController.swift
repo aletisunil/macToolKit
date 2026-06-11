@@ -80,7 +80,12 @@ final class RewritelyController: ObservableObject {
 
     func stop() {
         cancelPermissionPoll()
-        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            // Without this the server-side tap leaks (stays registered,
+            // disabled) every time the feature is toggled off.
+            CFMachPortInvalidate(tap)
+        }
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         }
