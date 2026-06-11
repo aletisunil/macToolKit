@@ -14,6 +14,16 @@ toggled from the wrench menu bar icon. Optional dock icon ("Show in Dock").
 
 ## Install
 
+### Homebrew
+
+```sh
+brew install --cask aletisunil/tap/mactoolkit
+```
+
+Upgrade later with `brew upgrade --cask mactoolkit`.
+
+### Manual
+
 Download the latest `macToolKit.dmg` from
 [Releases](https://github.com/aletisunil/macToolKit/releases), open it and
 drag macToolKit to Applications. The app is Developer ID signed and
