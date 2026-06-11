@@ -141,10 +141,18 @@ final class AppState: ObservableObject {
             rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .system
     }
 
-    /// Start whatever was enabled in the previous session. Called once at launch.
-    func startEnabledFeatures() {
+    /// Dock icon and appearance, applied at every launch regardless of
+    /// whether onboarding has run yet.
+    func applyLaunchAppearance() {
         DockIconManager.apply(showInDock: showInDock)
         applyAppearance()
+    }
+
+    /// Start whatever was enabled in the previous session. Called at launch
+    /// once onboarding is complete, or right after onboarding finishes, so
+    /// no feature can fire a permission prompt before the user has seen the
+    /// welcome flow.
+    func startEnabledFeatures() {
         if colorTemperatureEnabled { colorTemperature.start() }
         if scrollReverserEnabled { scrollReverser.start() }
         if rewritelyEnabled { rewritely.start() }

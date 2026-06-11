@@ -16,8 +16,14 @@ struct MacToolKitApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AppState.shared.startEnabledFeatures()
-        OnboardingWindowController.shared.showIfNeeded()
+        AppState.shared.applyLaunchAppearance()
+        if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+            AppState.shared.startEnabledFeatures()
+        } else {
+            // Features (and their permission prompts) wait until the user
+            // finishes the welcome flow.
+            OnboardingWindowController.shared.show()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

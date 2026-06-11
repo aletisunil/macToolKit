@@ -15,8 +15,8 @@ struct SettingsView: View {
             sidebar
             detail
         }
-        .frame(width: 920)
-        .frame(minHeight: 640)
+        .frame(width: 840)
+        .frame(minHeight: 560)
         .background(Color(nsColor: .appWindowBackground))
         .ignoresSafeArea()
     }
@@ -28,7 +28,7 @@ struct SettingsView: View {
             HStack(spacing: 10) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
-                    .frame(width: 34, height: 34)
+                    .frame(width: 30, height: 30)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("macToolKit")
                         .font(.headline)
@@ -38,8 +38,8 @@ struct SettingsView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.top, 44)
-            .padding(.bottom, 18)
+            .padding(.top, 36)
+            .padding(.bottom, 14)
 
             SidebarSectionLabel("Features")
             ForEach(SettingsTab.featureTabs) { tab in
@@ -59,7 +59,7 @@ struct SettingsView: View {
             Spacer()
         }
         .padding(.horizontal, 10)
-        .frame(width: 232)
+        .frame(width: 204)
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .appSidebarBackground))
         .overlay(alignment: .trailing) {
@@ -73,7 +73,7 @@ struct SettingsView: View {
 
     private var detail: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
                 switch appState.settingsTab {
                 case .finder: FinderPane()
                 case .display: DisplayPane()
@@ -83,9 +83,9 @@ struct SettingsView: View {
                 case .about: AboutPane()
                 }
             }
-            .padding(.horizontal, 30)
-            .padding(.top, 44)
-            .padding(.bottom, 30)
+            .padding(.horizontal, 24)
+            .padding(.top, 32)
+            .padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // Dictify uses compact macOS controls throughout the detail pane.
@@ -140,20 +140,21 @@ struct SidebarRow: View {
 
 /// Large rounded card surface.
 struct Card<Content: View>: View {
+    var padding: CGFloat = 14
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             content
         }
-        .padding(20)
+        .padding(padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(nsColor: .appCardBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor).opacity(0.4))
         )
     }
@@ -168,23 +169,23 @@ struct HeroCard<Trailing: View>: View {
 
     var body: some View {
         Card {
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 ZStack {
                     Circle()
                         .fill(.quaternary.opacity(0.7))
-                        .frame(width: 46, height: 46)
+                        .frame(width: 36, height: 36)
                     Image(systemName: icon)
-                        .font(.system(size: 19, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                 }
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.title3.weight(.bold))
+                        .font(.headline)
                     Text(subtitle)
-                        .font(.callout)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 16)
+                Spacer(minLength: 12)
                 trailing
             }
         }
@@ -209,21 +210,21 @@ struct StatusChip: View {
     }
 
     private var chipBody: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Circle()
                 .fill(isOn ? Color.green : Color.secondary.opacity(0.6))
-                .frame(width: 7, height: 7)
+                .frame(width: 6, height: 6)
             Text(isOn ? label.on : label.off)
-                .font(.callout.weight(.semibold))
+                .font(.footnote.weight(.semibold))
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(.quaternary.opacity(0.5))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor))
         )
     }
@@ -237,7 +238,7 @@ struct StatusColumn: View {
     var action: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 7) {
+        VStack(alignment: .trailing, spacing: 5) {
             Text(title.uppercased())
                 .font(.caption2.weight(.semibold))
                 .kerning(1.1)
@@ -256,14 +257,14 @@ struct SectionHeader: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
             Spacer()
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.link)
             }
         }
-        .padding(.top, 8)
+        .padding(.top, 6)
     }
 }
 
@@ -274,18 +275,18 @@ struct CardRow<Trailing: View>: View {
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.body.weight(.medium))
+                    .font(.callout.weight(.medium))
                 if let caption {
                     Text(caption)
-                        .font(.subheadline)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Spacer(minLength: 16)
+            Spacer(minLength: 12)
             trailing
         }
     }
@@ -302,9 +303,9 @@ struct ValueBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.callout.monospaced().weight(.semibold))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .font(.footnote.monospaced().weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(.quaternary.opacity(0.7))
@@ -318,7 +319,7 @@ struct WarningRow: View {
 
     var body: some View {
         Label(text, systemImage: icon)
-            .font(.callout)
+            .font(.footnote)
             .foregroundStyle(.orange)
     }
 }
@@ -377,7 +378,7 @@ private struct FinderPane: View {
             }
             if templates.isEmpty {
                 Text("No templates yet. Add one to populate Finder's New File menu.")
-                    .font(.callout)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
@@ -457,6 +458,7 @@ private struct DisplayPane: View {
                         caption: "Computes sunrise and sunset for your location.") {
                     Toggle("", isOn: $controller.useLocation)
                         .toggleStyle(.switch)
+                        .controlSize(.mini)
                         .labelsHidden()
                 }
                 if !controller.useLocation {
@@ -533,10 +535,10 @@ private struct RewritelyPane: View {
                 HStack(spacing: 14) {
                     ValueBadge(text: trigger.word)
                     Text(trigger.prompt.replacingOccurrences(of: "\n", with: " "))
-                        .font(.callout)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Spacer(minLength: 16)
+                    Spacer(minLength: 12)
                     HStack(spacing: 6) {
                         Button("Edit") { editingTrigger = trigger }
                         Button("Remove", role: .destructive) {
@@ -550,7 +552,7 @@ private struct RewritelyPane: View {
             }
             if triggers.triggers.isEmpty {
                 Text("No triggers yet. Add one, then type it at the end of any text field.")
-                    .font(.callout)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
@@ -598,6 +600,7 @@ private struct ScrollingPane: View {
                     caption: "Reverse two-finger and Magic Mouse scrolling.") {
                 Toggle("", isOn: $scroll.reverseTrackpad)
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .labelsHidden()
             }
             RowDivider()
@@ -605,6 +608,7 @@ private struct ScrollingPane: View {
                     caption: "Reverse scrolling from a regular mouse wheel.") {
                 Toggle("", isOn: $scroll.reverseMouse)
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .labelsHidden()
             }
         }
@@ -613,12 +617,14 @@ private struct ScrollingPane: View {
             CardRow(title: "Vertical scrolling", caption: nil) {
                 Toggle("", isOn: $scroll.reverseVertical)
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .labelsHidden()
             }
             RowDivider()
             CardRow(title: "Horizontal scrolling", caption: nil) {
                 Toggle("", isOn: $scroll.reverseHorizontal)
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .labelsHidden()
             }
         }
@@ -657,12 +663,14 @@ private struct GeneralPane: View {
                     caption: "The menu bar icon stays either way.") {
                 Toggle("", isOn: $appState.showInDock)
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .labelsHidden()
             }
             RowDivider()
             CardRow(title: "Launch at login", caption: nil) {
                 Toggle("", isOn: $launchAtLogin)
                     .toggleStyle(.switch)
+                    .controlSize(.mini)
                     .labelsHidden()
                     .onChange(of: launchAtLogin) { _, enable in
                         do {
@@ -711,39 +719,39 @@ private struct AboutPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 36)
+            Spacer(minLength: 28)
 
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 108, height: 108)
-                .shadow(color: Color.accentColor.opacity(0.45), radius: 26)
+                .frame(width: 88, height: 88)
+                .shadow(color: Color.accentColor.opacity(0.45), radius: 22)
 
             Text("macToolKit")
-                .font(.system(size: 32, weight: .bold))
-                .padding(.top, 18)
+                .font(.system(size: 26, weight: .bold))
+                .padding(.top, 14)
             Text("Version \(version)")
-                .font(.callout)
+                .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.top, 4)
+                .padding(.top, 3)
 
             Text("A small toolbox for your Mac")
-                .font(.title3)
+                .font(.body)
                 .foregroundStyle(.secondary)
-                .padding(.top, 28)
+                .padding(.top, 22)
 
             AboutSection("Tools") {
                 Text("Finder Tools · Color Temperature · Rewritely · Scroll Reverser")
-                    .font(.callout)
+                    .font(.footnote)
             }
 
-            Spacer(minLength: 36)
+            Spacer(minLength: 28)
 
             Text("© 2026 Sunil Aleti")
-                .font(.callout)
+                .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 8)
         }
-        .frame(maxWidth: .infinity, minHeight: 520)
+        .frame(maxWidth: .infinity, minHeight: 440)
     }
 }
 
@@ -757,13 +765,13 @@ private struct AboutSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 7) {
             Text(title)
-                .font(.callout.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
             content
         }
-        .padding(.top, 26)
+        .padding(.top, 20)
     }
 }
 

@@ -7,12 +7,6 @@ final class OnboardingWindowController {
 
     private var window: NSWindow?
 
-    /// Shows the welcome window on first launch only.
-    func showIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") else { return }
-        show()
-    }
-
     func show() {
         if window == nil {
             let content = OnboardingView().environmentObject(AppState.shared)

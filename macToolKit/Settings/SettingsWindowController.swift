@@ -21,7 +21,7 @@ final class SettingsWindowController {
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
             window.backgroundColor = NSColor.appWindowBackground
-            window.setContentSize(NSSize(width: 920, height: 640))
+            window.setContentSize(NSSize(width: 840, height: 560))
             window.center()
             self.window = window
         }
