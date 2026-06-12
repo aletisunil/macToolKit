@@ -83,11 +83,14 @@ struct SettingsView: View {
                 case .about: AboutPane()
                 }
             }
+            .id(appState.settingsTab)
+            .transition(.opacity)
             .padding(.horizontal, 24)
             .padding(.top, 32)
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .animation(.easeOut(duration: 0.18), value: appState.settingsTab)
         // Dictify uses compact macOS controls throughout the detail pane.
         .controlSize(.small)
     }
@@ -115,26 +118,32 @@ struct SidebarRow: View {
     let selected: Bool
     let action: () -> Void
 
+    @State private var hovering = false
+
+    private var rowBackground: AnyShapeStyle {
+        if selected { return AnyShapeStyle(Color.accentColor) }
+        if hovering { return AnyShapeStyle(.quaternary.opacity(0.5)) }
+        return AnyShapeStyle(.clear)
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
-                    .frame(width: 18)
+                IconTile(icon: tab.icon, tint: tab.tint, side: 20)
                 Text(tab.title)
                     .foregroundStyle(selected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 7)
-            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(selected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.clear))
+                    .fill(rowBackground)
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -160,27 +169,19 @@ struct Card<Content: View>: View {
     }
 }
 
-/// Hero card: circular icon, title, blurb, trailing status chip.
+/// Hero card: tinted gradient icon tile, title, blurb, trailing status chip.
 struct HeroCard<Trailing: View>: View {
-    let icon: String
-    let title: String
-    let subtitle: String
+    let tab: SettingsTab
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
         Card {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(.quaternary.opacity(0.7))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .medium))
-                }
+                IconTile(icon: tab.icon, tint: tab.tint, side: 38)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text(tab.title)
                         .font(.headline)
-                    Text(subtitle)
+                    Text(tab.subtitle)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -334,9 +335,7 @@ private struct FinderPane: View {
     private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HeroCard(icon: SettingsTab.finder.icon,
-                 title: SettingsTab.finder.title,
-                 subtitle: SettingsTab.finder.subtitle) {
+        HeroCard(tab: .finder) {
             StatusColumn(title: "Extension", isOn: extensionEnabled) {
                 if !extensionEnabled {
                     Permissions.openExtensionsSettings()
@@ -411,9 +410,7 @@ private struct DisplayPane: View {
     @ObservedObject private var controller = AppState.shared.colorTemperature
 
     var body: some View {
-        HeroCard(icon: SettingsTab.display.icon,
-                 title: SettingsTab.display.title,
-                 subtitle: SettingsTab.display.subtitle) {
+        HeroCard(tab: .display) {
             StatusColumn(title: "Status", isOn: appState.colorTemperatureEnabled) {
                 appState.colorTemperatureEnabled.toggle()
             }
@@ -505,9 +502,7 @@ private struct RewritelyPane: View {
     @State private var editingTrigger: RewriteTrigger?
 
     var body: some View {
-        HeroCard(icon: SettingsTab.rewritely.icon,
-                 title: SettingsTab.rewritely.title,
-                 subtitle: SettingsTab.rewritely.subtitle) {
+        HeroCard(tab: .rewritely) {
             StatusColumn(title: "Status", isOn: appState.rewritelyEnabled) {
                 appState.rewritelyEnabled.toggle()
             }
@@ -581,9 +576,7 @@ private struct ScrollingPane: View {
     @ObservedObject private var scroll = AppState.shared.scrollReverser
 
     var body: some View {
-        HeroCard(icon: SettingsTab.scrolling.icon,
-                 title: SettingsTab.scrolling.title,
-                 subtitle: SettingsTab.scrolling.subtitle) {
+        HeroCard(tab: .scrolling) {
             StatusColumn(title: "Status", isOn: appState.scrollReverserEnabled) {
                 appState.scrollReverserEnabled.toggle()
             }
@@ -641,9 +634,7 @@ private struct GeneralPane: View {
     private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HeroCard(icon: SettingsTab.general.icon,
-                 title: SettingsTab.general.title,
-                 subtitle: SettingsTab.general.subtitle) {
+        HeroCard(tab: .general) {
             EmptyView()
         }
 

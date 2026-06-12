@@ -162,10 +162,7 @@ private struct FeatureRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: tab.icon)
-                .font(.system(size: 22))
-                .foregroundStyle(tab.tint)
-                .frame(width: 30)
+            IconTile(icon: tab.icon, tint: tab.tint, side: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.body.weight(.semibold))
@@ -189,10 +186,7 @@ private struct FeaturePage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 12) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 44))
-                    .foregroundStyle(tab.tint)
-                    .frame(height: 56)
+                IconTile(icon: tab.icon, tint: tab.tint, side: 60)
                 Text(tab.title)
                     .font(.title.weight(.semibold))
                 Text(headline)
