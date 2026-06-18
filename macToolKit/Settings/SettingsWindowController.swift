@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// AppKit-managed settings window so it can be opened from anywhere
-/// (menu bar, dock reopen, mactoolkit:// URLs) without SwiftUI scene plumbing.
+/// (menu bar, dock reopen) without SwiftUI scene plumbing.
 @MainActor
 final class SettingsWindowController {
     static let shared = SettingsWindowController()

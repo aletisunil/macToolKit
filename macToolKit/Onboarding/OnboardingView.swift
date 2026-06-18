@@ -1,14 +1,13 @@
 import SwiftUI
-import FinderSync
 
-/// Six-page welcome flow: a welcome overview, one how-to page per feature,
+/// Five-page welcome flow: a welcome overview, one how-to page per feature,
 /// and a final permissions page. Nothing asks the system for access until
 /// the user reaches the last page and clicks a button there.
 struct OnboardingView: View {
     @EnvironmentObject private var appState: AppState
     @State private var page = 0
 
-    private static let pageCount = 6
+    private static let pageCount = 5
     private var isLastPage: Bool { page == Self.pageCount - 1 }
 
     var body: some View {
@@ -19,15 +18,6 @@ struct OnboardingView: View {
                     WelcomePage()
                 case 1:
                     FeaturePage(
-                        tab: .finder,
-                        headline: "Create files and copy paths without leaving Finder.",
-                        steps: [
-                            "Right-click inside any folder in Finder.",
-                            "Use the macToolKit menu items to create a new file on the spot or copy the folder's path.",
-                        ],
-                        footnote: "Needs the Finder extension — you'll switch it on at the last step.")
-                case 2:
-                    FeaturePage(
                         tab: .display,
                         headline: "Warms the display in the evening so it's easier on the eyes.",
                         steps: [
@@ -36,7 +26,7 @@ struct OnboardingView: View {
                             "Automatic mode can use your location for exact sun times — macOS asks only if you choose it.",
                         ],
                         footnote: "No permissions needed for manual mode.")
-                case 3:
+                case 2:
                     FeaturePage(
                         tab: .rewritely,
                         headline: "Rewrite text in place with Apple Intelligence.",
@@ -46,7 +36,7 @@ struct OnboardingView: View {
                             "The text is rewritten right where it is. Add your own triggers in Settings.",
                         ],
                         footnote: "Uses Accessibility access to read and replace the text — granted at the last step.")
-                case 4:
+                case 3:
                     FeaturePage(
                         tab: .scrolling,
                         headline: "Flip scroll direction per device.",
@@ -128,7 +118,7 @@ private struct WelcomePage: View {
                     .frame(width: 84, height: 84)
                 Text("Welcome to macToolKit")
                     .font(.title.weight(.semibold))
-                Text("Four small tools for your Mac. Here's the quick tour.")
+                Text("Three small tools for your Mac. Here's the quick tour.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -137,9 +127,6 @@ private struct WelcomePage: View {
             .padding(.bottom, 24)
 
             VStack(alignment: .leading, spacing: 20) {
-                FeatureRow(tab: .finder,
-                           title: "Finder tools",
-                           detail: "Create files and copy folder paths straight from Finder's right-click menu.")
                 FeatureRow(tab: .display,
                            title: "Color temperature",
                            detail: "Warms the display in the evening so it's easier on the eyes.")
@@ -175,7 +162,7 @@ private struct FeatureRow: View {
     }
 }
 
-// MARK: - Pages 2–5: one feature each
+// MARK: - Pages 2–4: one feature each
 
 private struct FeaturePage: View {
     let tab: SettingsTab
@@ -232,12 +219,11 @@ private struct FeaturePage: View {
     }
 }
 
-// MARK: - Page 6: permissions
+// MARK: - Page 5: permissions
 
 private struct SetupPage: View {
     @EnvironmentObject private var appState: AppState
     @State private var accessibilityGranted = Permissions.accessibilityGranted
-    @State private var extensionEnabled = FIFinderSyncController.isExtensionEnabled
 
     private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -246,7 +232,7 @@ private struct SetupPage: View {
             VStack(spacing: 4) {
                 Text("Set up macToolKit")
                     .font(.title.weight(.semibold))
-                Text("Two quick steps. Everything else works out of the box.")
+                Text("One quick step. Everything else works out of the box.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -257,16 +243,6 @@ private struct SetupPage: View {
             VStack(alignment: .leading, spacing: 24) {
                 SetupRow(
                     step: "1",
-                    title: "Enable the Finder extension",
-                    detail: "System Settings → General → Login Items & Extensions → Finder, then turn on “macToolKit Finder Tools”.",
-                    done: extensionEnabled, showsStatus: true
-                ) {
-                    Button("Open Extension Settings…") {
-                        Permissions.openExtensionsSettings()
-                    }
-                }
-                SetupRow(
-                    step: "2",
                     title: "Grant Accessibility access",
                     detail: "Used by Scroll Reverser and Rewritely to read scroll events and replace text. The features start on their own once access is granted.",
                     done: accessibilityGranted, showsStatus: true
@@ -300,7 +276,6 @@ private struct SetupPage: View {
         }
         .onReceive(timer) { _ in
             accessibilityGranted = Permissions.accessibilityGranted
-            extensionEnabled = FIFinderSyncController.isExtensionEnabled
         }
     }
 }

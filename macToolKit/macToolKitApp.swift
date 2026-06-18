@@ -30,12 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppState.shared.shutdown()
     }
 
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            FinderBridge.handle(url)
-        }
-    }
-
     // Clicking the dock icon (when visible) opens settings.
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {

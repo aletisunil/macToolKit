@@ -3,19 +3,18 @@ import Combine
 
 enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
     // Feature panes (sidebar "FEATURES" section)
-    case finder, display, rewritely, scrolling
+    case display, rewritely, scrolling
     // App panes (sidebar "APP" section)
     case general, about
 
     var id: String { rawValue }
 
-    static var featureTabs: [SettingsTab] { [.finder, .display, .rewritely, .scrolling] }
+    static var featureTabs: [SettingsTab] { [.display, .rewritely, .scrolling] }
     static var appTabs: [SettingsTab] { [.general, .about] }
 
     var title: String {
         switch self {
         case .general: "General"
-        case .finder: "Finder Tools"
         case .display: "Color Temperature"
         case .rewritely: "Rewritely"
         case .scrolling: "Scroll Reverser"
@@ -26,7 +25,6 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: "gearshape"
-        case .finder: "folder.fill"
         case .display: "sun.max.fill"
         case .rewritely: "wand.and.stars"
         case .scrolling: "computermouse.fill"
@@ -38,7 +36,6 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: .gray
-        case .finder: .blue
         case .display: .orange
         case .rewritely: .purple
         case .scrolling: .teal
@@ -49,7 +46,6 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .general: "Appearance, dock icon and permissions."
-        case .finder: "Create files and copy folder paths straight from Finder's right-click menu."
         case .display: "Warms the display in the evening so it's easier on the eyes. Manual slider or fully automatic."
         case .rewritely: "Type a trigger word at the end of any text field and the text is rewritten in place."
         case .scrolling: "Flip the scroll direction independently for the trackpad and a mouse wheel."

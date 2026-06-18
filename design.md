@@ -11,7 +11,6 @@ vibrancy. No imported web fonts — native craft over web styling.
 ## Identity spine
 One tint per feature, used identically on every surface:
 
-- Finder Tools — blue
 - Color Temperature — orange
 - Rewritely — purple
 - Scroll Reverser — teal
@@ -29,7 +28,7 @@ symbol at 0.48 × side, soft tint shadow.
 - **Settings** — 840 × 560, slim sidebar (tiles + hover + accent selection),
   detail pane of rounded cards. Hero card per pane: 38 pt tile + title +
   subtitle + status chip.
-- **Onboarding** — 460 × 560, six pages, tiles replace bare symbols.
+- **Onboarding** — 460 × 560, five pages, tiles replace bare symbols.
 
 ## Color
 - Paper: cream #F6F1E7 light / system window background dark

@@ -12,8 +12,8 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "1.3"
-    CURRENT_PROJECT_VERSION: 5
+    MARKETING_VERSION: "1.4"
+    CURRENT_PROJECT_VERSION: 6
   configs:
     Debug:
       CODE_SIGN_IDENTITY: "Apple Development"
@@ -27,7 +27,6 @@ targets:
     platform: macOS
     sources:
       - path: macToolKit
-      - path: Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit
@@ -44,43 +43,9 @@ targets:
         LSUIElement: true
         NSLocationUsageDescription: Used to compute local sunrise and sunset times for automatic color temperature.
         NSLocationWhenInUseUsageDescription: Used to compute local sunrise and sunset times for automatic color temperature.
-        CFBundleURLTypes:
-          - CFBundleURLName: com.sunilaleti.mactoolkit
-            CFBundleURLSchemes:
-              - mactoolkit
     entitlements:
       path: macToolKit/macToolKit.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - 5432YAY2UX.com.sunilaleti.mactoolkit
-    dependencies:
-      - target: FinderTools
-        embed: true
-  FinderTools:
-    type: app-extension
-    platform: macOS
-    sources:
-      - path: FinderTools
-      - path: Shared
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit.findertools
-    info:
-      path: FinderTools/Info.plist
-      properties:
-        CFBundleDisplayName: macToolKit Finder Tools
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.FinderSync
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FinderSync
-    entitlements:
-      path: FinderTools/FinderTools.entitlements
-      properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-only: true
-        com.apple.security.application-groups:
-          - 5432YAY2UX.com.sunilaleti.mactoolkit
+      properties: {}
 schemes:
   macToolKit:
     build:

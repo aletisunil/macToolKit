@@ -1,6 +1,5 @@
 import SwiftUI
 import ServiceManagement
-import FinderSync
 
 // Layout modeled on Dictify: dark slim sidebar with uppercase section labels
 // and quiet gray selection, detail pane of large rounded cards — hero card
@@ -75,7 +74,6 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 switch appState.settingsTab {
-                case .finder: FinderPane()
                 case .display: DisplayPane()
                 case .rewritely: RewritelyPane()
                 case .scrolling: ScrollingPane()
@@ -322,84 +320,6 @@ struct WarningRow: View {
         Label(text, systemImage: icon)
             .font(.footnote)
             .foregroundStyle(.orange)
-    }
-}
-
-// MARK: - Finder
-
-private struct FinderPane: View {
-    @State private var templates = SharedDefaults.loadTemplates()
-    @State private var editingTemplate: FileTemplate?
-    @State private var extensionEnabled = FIFinderSyncController.isExtensionEnabled
-
-    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        HeroCard(tab: .finder) {
-            StatusColumn(title: "Extension", isOn: extensionEnabled) {
-                if !extensionEnabled {
-                    Permissions.openExtensionsSettings()
-                }
-            }
-        }
-
-        if !extensionEnabled {
-            Card {
-                CardRow(title: "Turn on the Finder extension",
-                        caption: "System Settings → General → Login Items & Extensions → Finder, then enable “macToolKit Finder Tools”.") {
-                    Button("Open Extension Settings…") {
-                        Permissions.openExtensionsSettings()
-                    }
-                }
-            }
-        }
-
-        SectionHeader(title: "New File templates", actionTitle: "Add Template") {
-            editingTemplate = FileTemplate(name: "", ext: "")
-        }
-
-        Card {
-            ForEach(templates) { template in
-                CardRow(title: template.name,
-                        caption: "Creates an empty .\(template.ext) file"
-                            + (template.content.isEmpty ? "" : " with starter content")) {
-                    HStack(spacing: 6) {
-                        Button("Edit") { editingTemplate = template }
-                        Button("Remove", role: .destructive) {
-                            templates.removeAll { $0.id == template.id }
-                            SharedDefaults.saveTemplates(templates)
-                        }
-                    }
-                }
-                if template.id != templates.last?.id {
-                    RowDivider()
-                }
-            }
-            if templates.isEmpty {
-                Text("No templates yet. Add one to populate Finder's New File menu.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-
-        Text("Templates appear in Finder's right-click New File menu.")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
-
-        Color.clear.frame(height: 0)
-            .onReceive(timer) { _ in
-                extensionEnabled = FIFinderSyncController.isExtensionEnabled
-            }
-            .sheet(item: $editingTemplate) { template in
-                TemplateEditorSheet(template: template) { updated in
-                    if let index = templates.firstIndex(where: { $0.id == updated.id }) {
-                        templates[index] = updated
-                    } else {
-                        templates.append(updated)
-                    }
-                    SharedDefaults.saveTemplates(templates)
-                }
-            }
     }
 }
 
@@ -681,7 +601,7 @@ private struct GeneralPane: View {
 
         Card {
             CardRow(title: "Accessibility",
-                    caption: "Used by Scroll Reverser and Rewritely. Color Temperature and the Finder tools work without it.") {
+                    caption: "Used by Scroll Reverser and Rewritely. Color Temperature works without it.") {
                 if accessibilityGranted {
                     StatusChip(isOn: true, label: ("Granted", "Not granted"))
                 } else {
@@ -731,7 +651,7 @@ private struct AboutPane: View {
                 .padding(.top, 22)
 
             AboutSection("Tools") {
-                Text("Finder Tools · Color Temperature · Rewritely · Scroll Reverser")
+                Text("Color Temperature · Rewritely · Scroll Reverser")
                     .font(.footnote)
             }
 
@@ -767,98 +687,6 @@ private struct AboutSection<Content: View>: View {
 }
 
 // MARK: - Editor sheets
-
-/// Edits a template in local state and commits on Save — editing the store
-/// directly republishes on every keystroke and the fields lose focus.
-struct TemplateEditorSheet: View {
-    @State private var name: String
-    @State private var ext: String
-    @State private var content: String
-    private let id: UUID
-    private let isNew: Bool
-    private let onSave: (FileTemplate) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    init(template: FileTemplate, onSave: @escaping (FileTemplate) -> Void) {
-        _name = State(initialValue: template.name)
-        _ext = State(initialValue: template.ext)
-        _content = State(initialValue: template.content)
-        id = template.id
-        isNew = template.name.isEmpty
-        self.onSave = onSave
-    }
-
-    private var trimmedName: String {
-        name.trimmingCharacters(in: .whitespaces)
-    }
-
-    private var trimmedExt: String {
-        ext.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(isNew ? "New Template" : "Edit Template")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Template name")
-                    .font(.subheadline.weight(.medium))
-                TextField("Template name", text: $name,
-                          prompt: Text("e.g. Shell Script"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                Text("Shown in Finder's New File menu.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("File extension")
-                    .font(.subheadline.weight(.medium))
-                TextField("File extension", text: $ext, prompt: Text("e.g. sh"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                Text("The file type to create, without the dot.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Starting content")
-                    .font(.subheadline.weight(.medium))
-                TextEditor(text: $content)
-                    .font(.body.monospaced())
-                    .frame(minHeight: 90)
-                    .padding(4)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(Color(nsColor: .separatorColor))
-                    )
-                Text("Optional. Written into every new file created from this template.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    guard !trimmedName.isEmpty, !trimmedExt.isEmpty else { return }
-                    onSave(FileTemplate(id: id, name: trimmedName,
-                                        ext: trimmedExt, content: content))
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(trimmedName.isEmpty || trimmedExt.isEmpty)
-            }
-        }
-        .padding(16)
-        .frame(width: 420)
-    }
-}
 
 /// Edits a trigger in local state and commits on Save.
 struct TriggerEditorSheet: View {

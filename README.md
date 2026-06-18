@@ -1,13 +1,12 @@
 # macToolKit
 
-Menu bar toolkit for macOS 26+ (Apple Silicon). Four tools, individually
+Menu bar toolkit for macOS 26+ (Apple Silicon). Three tools, individually
 toggled from the wrench menu bar icon. Optional dock icon ("Show in Dock").
 
 ## Features
 
 | Feature | Permission | Notes |
 |---|---|---|
-| Finder right-click: New File + Copy Path | Enable extension | Editable New File templates (starter set: .txt .py .md .js) |
 | Color temperature (f.lux style) | none | Manual slider or sunset/sunrise auto mode |
 | Rewritely — trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
 | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
@@ -48,7 +47,7 @@ drag macToolKit to Applications. The app is Developer ID signed and
 notarized — no Gatekeeper warnings.
 
 After installing either way, see [First-run setup](#first-run-setup) for the
-Finder-extension and Accessibility permissions each tool needs.
+Accessibility permissions each tool needs.
 
 ## Build
 
@@ -77,13 +76,10 @@ certificate and a saved `notarytool` keychain profile named `macToolKit`).
 
 ## First-run setup
 
-1. **Finder extension** — System Settings → General → Login Items & Extensions
-   → Finder → enable "macToolKit Finder Tools". (Settings → Finder tab has a
-   shortcut button.)
-2. **Accessibility** — needed only for Scroll Reverser and Rewritely; grant
+1. **Accessibility** — needed only for Scroll Reverser and Rewritely; grant
    from Settings → General when prompted.
-3. **Rewritely** — requires Apple Intelligence enabled in System Settings.
-4. Auto color temperature can use Location (optional) or fixed times.
+2. **Rewritely** — requires Apple Intelligence enabled in System Settings.
+3. Auto color temperature can use Location (optional) or fixed times.
 
 ## How Rewritely works
 
@@ -96,8 +92,6 @@ settable AX value (some Electron/web views) use a select-all + paste fallback.
 ## Architecture notes
 
 - `macToolKit/` — main app (non-sandboxed). `Features/` one folder per tool.
-- `FinderTools/` — sandboxed FinderSync extension; it cannot write files, so
-  New File requests are sent to the main app via `mactoolkit://` URLs.
 - Gamma tables (`CGSetDisplayTransferByTable`) are reset by macOS on wake and
   display changes; `ColorTemperatureController` reapplies automatically and
   `CGDisplayRestoreColorSyncSettings()` restores on disable/quit.
