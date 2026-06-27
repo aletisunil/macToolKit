@@ -159,30 +159,41 @@ final class RewritelyController: ObservableObject {
         // Let the final trigger keystroke settle in the target app.
         try? await Task.sleep(for: .milliseconds(120))
 
+        // Split the field at the caret: the trigger sits immediately before the
+        // insertion point, so only the text preceding it should be rewritten.
         if let element = AXText.focusedElement(),
+           AXText.isValueSettable(element),
            let value = AXText.value(of: element),
-           let original = Self.stripTrigger(trigger.word, from: value),
-           AXText.isValueSettable(element) {
-            await rewriteViaAX(trigger, element: element, original: original)
+           let split = Self.splitAtCursor(trigger.word, value: value,
+                                          cursor: AXText.selectedRange(of: element)) {
+            await rewriteViaAX(trigger, element: element,
+                               before: split.before, after: split.after)
         } else {
             await rewriteViaClipboard(trigger)
         }
     }
 
-    private func rewriteViaAX(_ trigger: RewriteTrigger,
-                              element: AXUIElement, original: String) async {
-        guard !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            AXText.setValue(original, on: element)
+    private func rewriteViaAX(_ trigger: RewriteTrigger, element: AXUIElement,
+                              before: String, after: String) async {
+        guard !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Nothing to rewrite — just drop the trigger, keep the tail.
+            AXText.setValue(before + after, on: element)
+            AXText.setSelectedRange(
+                NSRange(location: before.utf16.count, length: 0), on: element)
             return
         }
-        AXText.setValue(original, on: element) // remove the trigger immediately
+        AXText.setValue(before + after, on: element) // remove the trigger immediately
         RewriteHUD.shared.show("Rewriting…")
         do {
-            let rewritten = try await engine.rewrite(original, using: trigger)
-            AXText.setValue(rewritten, on: element)
+            let rewritten = try await engine.rewrite(before, using: trigger)
+            AXText.setValue(rewritten + after, on: element)
+            AXText.setSelectedRange(
+                NSRange(location: rewritten.utf16.count, length: 0), on: element)
             RewriteHUD.shared.hide()
         } catch {
-            AXText.setValue(original, on: element)
+            AXText.setValue(before + after, on: element)
+            AXText.setSelectedRange(
+                NSRange(location: before.utf16.count, length: 0), on: element)
             RewriteHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
         }
     }
@@ -197,7 +208,9 @@ final class RewritelyController: ObservableObject {
         let savedItems = pasteboard.string(forType: .string)
         pasteboard.clearContents()
 
-        await KeySim.selectAll()
+        // Select only the text before the caret (the trigger was just removed),
+        // so text after the trigger survives the paste.
+        await KeySim.selectToStart()
         await KeySim.copy()
         try? await Task.sleep(for: .milliseconds(150))
 
@@ -231,11 +244,33 @@ final class RewritelyController: ObservableObject {
         }
     }
 
-    /// Returns the text with the trailing trigger word removed, or nil when the
-    /// value doesn't end with the trigger (e.g. AX exposes a different field).
-    static func stripTrigger(_ word: String, from value: String) -> String? {
-        guard value.hasSuffix(word) else { return nil }
-        return String(value.dropLast(word.count))
+    /// Splits the field value at the caret into the text before the trigger and
+    /// the text after it. The trigger must sit immediately before the caret;
+    /// returns nil otherwise (so the caller falls back to the clipboard path).
+    /// Offsets are UTF-16 to match AX text ranges and `NSString`.
+    static func splitAtCursor(_ word: String, value: String,
+                              cursor: NSRange?) -> (before: String, after: String)? {
+        let ns = value as NSString
+        let triggerLen = (word as NSString).length
+
+        // Resolve the caret. With no range, fall back to end-of-field only when
+        // the value actually ends with the trigger (single-line / suffix case).
+        let caret: Int
+        if let cursor, cursor.length == 0 {
+            caret = cursor.location
+        } else if cursor == nil, ns.hasSuffix(word) {
+            caret = ns.length
+        } else {
+            return nil
+        }
+
+        guard caret >= triggerLen, caret <= ns.length else { return nil }
+        let triggerRange = NSRange(location: caret - triggerLen, length: triggerLen)
+        guard ns.substring(with: triggerRange) == word else { return nil }
+
+        let before = ns.substring(to: caret - triggerLen)
+        let after = ns.substring(from: caret)
+        return (before, after)
     }
 }
 

@@ -21,6 +21,28 @@ enum AXText {
         return string
     }
 
+    /// The current selection / caret as a UTF-16 range. Length 0 is a caret.
+    /// AX text ranges are UTF-16 offsets, matching String.utf16 / NSString.
+    static func selectedRange(of element: AXUIElement) -> NSRange? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            element, kAXSelectedTextRangeAttribute as CFString, &value)
+        guard result == .success, let value else { return nil }
+        let axValue = value as! AXValue
+        guard AXValueGetType(axValue) == .cfRange else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(axValue, .cfRange, &range) else { return nil }
+        return NSRange(location: range.location, length: range.length)
+    }
+
+    @discardableResult
+    static func setSelectedRange(_ range: NSRange, on element: AXUIElement) -> Bool {
+        var cfRange = CFRange(location: range.location, length: range.length)
+        guard let axValue = AXValueCreate(.cfRange, &cfRange) else { return false }
+        return AXUIElementSetAttributeValue(
+            element, kAXSelectedTextRangeAttribute as CFString, axValue) == .success
+    }
+
     static func isValueSettable(_ element: AXUIElement) -> Bool {
         var settable = DarwinBoolean(false)
         let result = AXUIElementIsAttributeSettable(
@@ -61,6 +83,7 @@ enum KeySim {
     }
 
     static func selectAll() async { await press(0, flags: .maskCommand) }   // kVK_ANSI_A
+    static func selectToStart() async { await press(126, flags: [.maskCommand, .maskShift]) } // Up: select to doc start
     static func copy() async { await press(8, flags: .maskCommand) }        // kVK_ANSI_C
     static func paste() async { await press(9, flags: .maskCommand) }       // kVK_ANSI_V
 }
