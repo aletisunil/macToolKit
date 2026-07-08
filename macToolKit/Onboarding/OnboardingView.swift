@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Five-page welcome flow: a welcome overview, one how-to page per feature,
+/// Six-page welcome flow: a welcome overview, one how-to page per feature,
 /// and a final permissions page. Nothing asks the system for access until
 /// the user reaches the last page and clicks a button there.
 struct OnboardingView: View {
     @EnvironmentObject private var appState: AppState
     @State private var page = 0
 
-    private static let pageCount = 5
+    private static let pageCount = 6
     private var isLastPage: Bool { page == Self.pageCount - 1 }
 
     var body: some View {
@@ -46,6 +46,16 @@ struct OnboardingView: View {
                             "Each keeps its own direction — natural on the trackpad, classic on the wheel.",
                         ],
                         footnote: "Uses Accessibility access to see scroll events — granted at the last step.")
+                case 4:
+                    FeaturePage(
+                        tab: .windowSwitcher,
+                        headline: "Switch between windows, not just apps.",
+                        steps: [
+                            "Hold ⌥ and press Tab — every window appears with a live preview.",
+                            "Keep pressing Tab to cycle — hold ⇧ to go backwards. Release ⌥ to switch.",
+                            "Make it your Cmd-Tab replacement and add more shortcuts in Settings.",
+                        ],
+                        footnote: "Uses Accessibility access for the shortcut — granted at the last step. Previews need Screen Recording, granted later from Settings.")
                 default:
                     SetupPage()
                 }
@@ -118,7 +128,7 @@ private struct WelcomePage: View {
                     .frame(width: 84, height: 84)
                 Text("Welcome to macToolKit")
                     .font(.title.weight(.semibold))
-                Text("Three small tools for your Mac. Here's the quick tour.")
+                Text("Four small tools for your Mac. Here's the quick tour.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -136,6 +146,9 @@ private struct WelcomePage: View {
                 FeatureRow(tab: .scrolling,
                            title: "Scroll Reverser",
                            detail: "Flip scroll direction independently for the trackpad and a mouse wheel.")
+                FeatureRow(tab: .windowSwitcher,
+                           title: "Window Switcher",
+                           detail: "Hold ⌥ and press Tab to switch between windows with live previews.")
             }
             .padding(.horizontal, 44)
         }
@@ -244,7 +257,7 @@ private struct SetupPage: View {
                 SetupRow(
                     step: "1",
                     title: "Grant Accessibility access",
-                    detail: "Used by Scroll Reverser and Rewritely to read scroll events and replace text. The features start on their own once access is granted.",
+                    detail: "Used by Scroll Reverser, Rewritely and the Window Switcher to read input events, replace text and control windows. The features start on their own once access is granted.",
                     done: accessibilityGranted, showsStatus: true
                 ) {
                     Button("Open Accessibility Settings…") {

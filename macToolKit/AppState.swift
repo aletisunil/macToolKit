@@ -3,13 +3,13 @@ import Combine
 
 enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
     // Feature panes (sidebar "FEATURES" section)
-    case display, rewritely, scrolling
+    case display, rewritely, scrolling, windowSwitcher
     // App panes (sidebar "APP" section)
     case general, about
 
     var id: String { rawValue }
 
-    static var featureTabs: [SettingsTab] { [.display, .rewritely, .scrolling] }
+    static var featureTabs: [SettingsTab] { [.display, .rewritely, .scrolling, .windowSwitcher] }
     static var appTabs: [SettingsTab] { [.general, .about] }
 
     var title: String {
@@ -18,6 +18,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .display: "Color Temperature"
         case .rewritely: "Rewritely"
         case .scrolling: "Scroll Reverser"
+        case .windowSwitcher: "Window Switcher"
         case .about: "About"
         }
     }
@@ -28,6 +29,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .display: "sun.max.fill"
         case .rewritely: "wand.and.stars"
         case .scrolling: "computermouse.fill"
+        case .windowSwitcher: "rectangle.stack"
         case .about: "info.circle"
         }
     }
@@ -39,6 +41,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .display: .orange
         case .rewritely: .purple
         case .scrolling: .teal
+        case .windowSwitcher: .indigo
         case .about: .gray
         }
     }
@@ -49,6 +52,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .display: "Warms the display in the evening so it's easier on the eyes. Manual slider or fully automatic."
         case .rewritely: "Type a trigger word at the end of any text field and the text is rewritten in place."
         case .scrolling: "Flip the scroll direction independently for the trackpad and a mouse wheel."
+        case .windowSwitcher: "Hold ⌥ and press Tab to switch between windows. Previews, minimized windows and all."
         case .about: "Version and credits."
         }
     }
@@ -75,6 +79,7 @@ final class AppState: ObservableObject {
     let colorTemperature = ColorTemperatureController()
     let scrollReverser = ScrollTap()
     let rewritely = RewritelyController()
+    let windowSwitcher = WindowSwitcherController()
 
     @Published var settingsTab: SettingsTab = .general
 
@@ -108,6 +113,13 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published var windowSwitcherEnabled: Bool {
+        didSet {
+            defaults.set(windowSwitcherEnabled, forKey: "windowSwitcherEnabled")
+            windowSwitcherEnabled ? windowSwitcher.start() : windowSwitcher.stop()
+        }
+    }
+
     @Published var appearanceMode: AppearanceMode {
         didSet {
             defaults.set(appearanceMode.rawValue, forKey: "appearanceMode")
@@ -133,6 +145,7 @@ final class AppState: ObservableObject {
         colorTemperatureEnabled = defaults.bool(forKey: "colorTemperatureEnabled")
         scrollReverserEnabled = defaults.bool(forKey: "scrollReverserEnabled")
         rewritelyEnabled = defaults.bool(forKey: "rewritelyEnabled")
+        windowSwitcherEnabled = defaults.bool(forKey: "windowSwitcherEnabled")
         appearanceMode = AppearanceMode(
             rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .system
     }
@@ -152,6 +165,7 @@ final class AppState: ObservableObject {
         if colorTemperatureEnabled { colorTemperature.start() }
         if scrollReverserEnabled { scrollReverser.start() }
         if rewritelyEnabled { rewritely.start() }
+        if windowSwitcherEnabled { windowSwitcher.start() }
     }
 
     /// Tear down anything that mutates global system state. Called at quit.
@@ -159,5 +173,6 @@ final class AppState: ObservableObject {
         colorTemperature.stop()
         scrollReverser.stop()
         rewritely.stop()
+        windowSwitcher.stop()
     }
 }

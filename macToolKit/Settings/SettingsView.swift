@@ -77,6 +77,7 @@ struct SettingsView: View {
                 case .display: DisplayPane()
                 case .rewritely: RewritelyPane()
                 case .scrolling: ScrollingPane()
+                case .windowSwitcher: WindowSwitcherPane()
                 case .general: GeneralPane()
                 case .about: AboutPane()
                 }
@@ -544,6 +545,334 @@ private struct ScrollingPane: View {
     }
 }
 
+// MARK: - Window Switcher
+
+private struct WindowSwitcherPane: View {
+    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var switcher = AppState.shared.windowSwitcher
+    @ObservedObject private var shortcuts = AppState.shared.windowSwitcher.shortcuts
+    @ObservedObject private var blacklist = AppState.shared.windowSwitcher.blacklist
+    @State private var screenRecordingGranted = Permissions.screenRecordingGranted
+
+    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HeroCard(tab: .windowSwitcher) {
+            StatusColumn(title: "Status", isOn: appState.windowSwitcherEnabled) {
+                appState.windowSwitcherEnabled.toggle()
+            }
+        }
+
+        if appState.windowSwitcherEnabled && !switcher.tapActive {
+            Card {
+                WarningRow(text: "Waiting for Accessibility permission. The switcher starts automatically once it's granted.")
+            }
+        }
+
+        SectionHeader(title: "Shortcuts",
+                      actionTitle: shortcuts.slots.count < ShortcutStore.maxSlots
+                          ? "Add shortcut" : nil) {
+            shortcuts.slots.append(ShortcutSlot())
+        }
+
+        Text("Hold the modifier and press the key to open; keep pressing to cycle, ⇧ cycles backwards, Esc cancels, release the modifier to switch. Set ⌘ + ⇥ to replace the system Cmd-Tab switcher.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+        ForEach($shortcuts.slots) { $slot in
+            ShortcutSlotCard(
+                slot: $slot,
+                index: shortcuts.slots.firstIndex(where: { $0.id == slot.id }) ?? 0,
+                removable: shortcuts.slots.count > 1
+            ) {
+                shortcuts.slots.removeAll { $0.id == slot.id }
+            }
+        }
+
+        SectionHeader(title: "Windows")
+
+        Card {
+            includeToggle("Minimized windows",
+                          caption: "Shown with a badge at the end of the list.",
+                          isOn: $switcher.includeMinimized)
+            RowDivider()
+            includeToggle("Windows of hidden apps",
+                          caption: "Apps hidden with ⌘H stay switchable.",
+                          isOn: $switcher.includeHidden)
+            RowDivider()
+            includeToggle("Windows on other Spaces",
+                          caption: PrivateCGS.available
+                              ? "Badged with their Space number."
+                              : "Unavailable on this macOS version.",
+                          isOn: $switcher.includeOtherSpaces)
+            RowDivider()
+            includeToggle("Fullscreen windows",
+                          caption: nil,
+                          isOn: $switcher.includeFullscreen)
+        }
+
+        SectionHeader(title: "Behavior")
+
+        Card {
+            CardRow(title: "Show after",
+                    caption: "Quick chords still switch during the delay; only the panel waits.") {
+                Picker("", selection: $switcher.showDelay) {
+                    Text("Instantly").tag(0.0)
+                    Text("0.1 s").tag(0.1)
+                    Text("0.2 s").tag(0.2)
+                    Text("0.5 s").tag(0.5)
+                }
+                .labelsHidden()
+                .frame(width: 110)
+            }
+            RowDivider()
+            CardRow(title: "Appears on", caption: nil) {
+                Picker("", selection: $switcher.screenChoice) {
+                    ForEach(SwitcherScreenChoice.allCases) { choice in
+                        Text(choice.label).tag(choice)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 160)
+            }
+        }
+
+        SectionHeader(title: "Appearance")
+
+        Card {
+            CardRow(title: "Size", caption: nil) {
+                Picker("", selection: $switcher.thumbnailSize) {
+                    ForEach(ThumbnailSize.allCases) { size in
+                        Text(size.label).tag(size)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
+            }
+            RowDivider()
+            CardRow(title: "Alignment", caption: nil) {
+                Picker("", selection: $switcher.alignment) {
+                    ForEach(SwitcherAlignment.allCases) { value in
+                        Text(value.label).tag(value)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            RowDivider()
+            CardRow(title: "Theme", caption: nil) {
+                Picker("", selection: $switcher.theme) {
+                    ForEach(SwitcherTheme.allCases) { value in
+                        Text(value.label).tag(value)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
+            }
+            RowDivider()
+            CardRow(title: "Fade in", caption: nil) {
+                Toggle("", isOn: $switcher.fadeIn)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+            RowDivider()
+            CardRow(title: "VoiceOver focus",
+                    caption: "The switcher takes keyboard focus while open so VoiceOver can read the tiles.") {
+                Toggle("", isOn: $switcher.assistiveFocus)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+        }
+
+        SectionHeader(title: "Blacklist", actionTitle: "Add app…") {
+            addBlacklistApp()
+        }
+
+        if blacklist.entries.isEmpty {
+            Card {
+                Text("Hide an app's windows from the switcher, or let it keep the real shortcut (useful for VMs and remote desktops).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            Card {
+                ForEach(blacklist.entries) { entry in
+                    BlacklistRow(entry: entry, store: blacklist)
+                    if entry.id != blacklist.entries.last?.id {
+                        RowDivider()
+                    }
+                }
+            }
+        }
+
+        SectionHeader(title: "Window previews")
+
+        Card {
+            CardRow(title: "Screen Recording",
+                    caption: "Needed for window previews. Without it the switcher shows app icons instead.") {
+                if screenRecordingGranted {
+                    StatusChip(isOn: true, label: ("Granted", "Not granted"))
+                } else {
+                    Button("Grant…") {
+                        Permissions.requestScreenRecording()
+                        Permissions.openScreenRecordingSettings()
+                    }
+                }
+            }
+        }
+        .onReceive(timer) { _ in
+            screenRecordingGranted = Permissions.screenRecordingGranted
+        }
+    }
+
+    private func includeToggle(_ title: String, caption: String?,
+                               isOn: Binding<Bool>) -> some View {
+        CardRow(title: title, caption: caption) {
+            Toggle("", isOn: isOn)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+        }
+    }
+
+    private func addBlacklistApp() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = true
+        panel.message = "Choose apps to blacklist from the window switcher."
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            guard let bundle = Bundle(url: url),
+                  let bundleID = bundle.bundleIdentifier else { continue }
+            let name = FileManager.default.displayName(atPath: url.path)
+                .replacingOccurrences(of: ".app", with: "")
+            blacklist.add(bundleID: bundleID, name: name)
+        }
+    }
+}
+
+/// Editor for one of the nine shortcut slots: trigger chord, style, filters.
+private struct ShortcutSlotCard: View {
+    @Binding var slot: ShortcutSlot
+    let index: Int
+    let removable: Bool
+    let onRemove: () -> Void
+
+    var body: some View {
+        Card {
+            HStack {
+                Text("Shortcut \(index + 1)")
+                    .font(.callout.weight(.medium))
+                Spacer()
+                ValueBadge(text: slot.chordDescription)
+                if removable {
+                    Button {
+                        onRemove()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove shortcut")
+                }
+            }
+            RowDivider()
+            CardRow(title: "Hold", caption: nil) {
+                Picker("", selection: $slot.holdModifier) {
+                    ForEach(HoldModifier.allCases) { modifier in
+                        Text(modifier.symbol).tag(modifier)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 160)
+            }
+            CardRow(title: "Then press", caption: nil) {
+                Picker("", selection: $slot.key) {
+                    ForEach(TriggerKey.allCases) { key in
+                        Text(key.symbol).tag(key)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 110)
+            }
+            CardRow(title: "Style", caption: nil) {
+                Picker("", selection: $slot.style) {
+                    ForEach(SwitcherStyle.allCases) { style in
+                        Text(style.label).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 130)
+            }
+            RowDivider()
+            CardRow(title: "Only windows on the active Space", caption: nil) {
+                miniToggle($slot.activeSpaceOnly)
+            }
+            CardRow(title: "Only windows on the switcher's screen", caption: nil) {
+                miniToggle($slot.currentScreenOnly)
+            }
+            CardRow(title: "Only windows of the frontmost app", caption: nil) {
+                miniToggle($slot.sameAppOnly)
+            }
+        }
+    }
+
+    private func miniToggle(_ binding: Binding<Bool>) -> some View {
+        Toggle("", isOn: binding)
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+    }
+}
+
+private struct BlacklistRow: View {
+    let entry: BlacklistEntry
+    @ObservedObject var store: BlacklistStore
+
+    private var binding: Binding<BlacklistEntry>? {
+        guard let index = store.entries.firstIndex(where: { $0.id == entry.id })
+        else { return nil }
+        return $store.entries[index]
+    }
+
+    var body: some View {
+        if let binding {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.name)
+                        .font(.callout.weight(.medium))
+                    Text(entry.bundleID)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 12)
+                Toggle("Hide windows", isOn: binding.hideWindows)
+                    .toggleStyle(.checkbox)
+                    .font(.footnote)
+                Toggle("Don't intercept", isOn: binding.dontIntercept)
+                    .toggleStyle(.checkbox)
+                    .font(.footnote)
+                Button {
+                    store.entries.removeAll { $0.id == entry.id }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove from blacklist")
+            }
+        }
+    }
+}
+
 // MARK: - General
 
 private struct GeneralPane: View {
@@ -651,7 +980,7 @@ private struct AboutPane: View {
                 .padding(.top, 22)
 
             AboutSection("Tools") {
-                Text("Color Temperature · Rewritely · Scroll Reverser")
+                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher")
                     .font(.footnote)
             }
 

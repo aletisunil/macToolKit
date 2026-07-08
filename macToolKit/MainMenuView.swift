@@ -7,6 +7,7 @@ struct MainMenuView: View {
         Toggle("Color Temperature", isOn: $appState.colorTemperatureEnabled)
         Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
         Toggle("Rewritely", isOn: $appState.rewritelyEnabled)
+        Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
 
         Divider()
 

@@ -113,15 +113,25 @@ final class ColorTemperatureController: NSObject, ObservableObject, CLLocationMa
             // deep night (also covers post-sunset fade completion)
             if date >= sunrise.addingTimeInterval(-fade), date < sunrise {
                 let progress = 1 - (sunrise.timeIntervalSince(date) / fade)
-                return night + (day - night) * progress
+                return Self.fade(from: night, to: day, progress: progress)
             }
             return night
         }
         if date >= sunset {
             let progress = date.timeIntervalSince(sunset) / fade
-            return day + (night - day) * progress
+            return Self.fade(from: day, to: night, progress: progress)
         }
         return day
+    }
+
+    /// Interpolate color temperature in mired (reciprocal-Kelvin) space, which is
+    /// perceptually linear. Interpolating Kelvin directly makes the fade look
+    /// fast-then-slow; mired keeps the visible shift even across the transition.
+    static func fade(from: Double, to: Double, progress: Double) -> Double {
+        let t = min(max(progress, 0), 1)
+        let mFrom = 1_000_000 / from
+        let mTo = 1_000_000 / to
+        return 1_000_000 / (mFrom + (mTo - mFrom) * t)
     }
 
     private func scheduleTimes(for date: Date) -> (sunrise: Date, sunset: Date) {

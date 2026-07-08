@@ -12,15 +12,23 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "1.5"
-    CURRENT_PROJECT_VERSION: 7
+    MARKETING_VERSION: "1.6"
+    CURRENT_PROJECT_VERSION: 8
   configs:
     Debug:
       CODE_SIGN_IDENTITY: "Apple Development"
+      # Distinct bundle id + name so the Xcode debug build is a separate app
+      # from the installed stable one: separate Accessibility (TCC) entry,
+      # separate UserDefaults domain, separate login item. No need to remove
+      # and re-add the stable app in Accessibility when developing.
+      BUNDLE_ID_SUFFIX: .debug
+      APP_DISPLAY_NAME: "macToolKit Debug"
     Release:
       # Notarization requires Developer ID + hardened runtime + timestamp.
       CODE_SIGN_IDENTITY: "Developer ID Application"
       OTHER_CODE_SIGN_FLAGS: "--timestamp"
+      BUNDLE_ID_SUFFIX: ""
+      APP_DISPLAY_NAME: macToolKit
 targets:
   macToolKit:
     type: application
@@ -29,13 +37,19 @@ targets:
       - path: macToolKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit
+        PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX)
+        # Renames the built .app ("macToolKit Debug.app" in Debug). The macOS
+        # Accessibility list labels rows by the on-disk bundle filename
+        # (PRODUCT_NAME), not by CFBundleDisplayName — so this is what makes
+        # the debug build show as a distinct "macToolKit Debug" row.
+        PRODUCT_NAME: $(APP_DISPLAY_NAME)
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Sunil Aleti"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: macToolKit/Info.plist
       properties:
-        CFBundleDisplayName: macToolKit
+        CFBundleDisplayName: $(APP_DISPLAY_NAME)
+        CFBundleName: $(APP_DISPLAY_NAME)
         # Reference build settings so release.sh's MARKETING_VERSION override
         # takes effect; literals here get baked in at xcodegen time.
         CFBundleShortVersionString: $(MARKETING_VERSION)

@@ -1,17 +1,30 @@
 import AppKit
 import CoreGraphics
 
-/// Applies a color-temperature tint by scaling per-channel gamma ramps on all
-/// active displays. Uses only public CoreGraphics API; macOS resets gamma on
-/// display reconfiguration and wake, so callers must reapply (see
+/// Applies a color-temperature tint by scaling each display's *own* calibrated
+/// gamma ramp per channel. Uses only public CoreGraphics API; macOS resets gamma
+/// on display reconfiguration and wake, so callers must reapply (see
 /// ColorTemperatureController).
 @MainActor
 final class GammaController {
     private(set) var currentKelvin: Double?
 
+    private struct GammaRamp {
+        var red: [CGGammaValue]
+        var green: [CGGammaValue]
+        var blue: [CGGammaValue]
+        var size: Int
+    }
+
+    /// The display's original (calibrated, untinted) ramp, captured once before
+    /// we ever tint it. Every apply scales from this baseline instead of reading
+    /// back the hardware table - otherwise repeated applies would compound the
+    /// tint on top of an already-tinted table.
+    private var baselines: [CGDirectDisplayID: GammaRamp] = [:]
+
     func apply(kelvin: Double) {
         currentKelvin = kelvin
-        let (r, g, b) = Self.whitepoint(kelvin: kelvin)
+        let (wr, wg, wb) = Self.whitepoint(kelvin: kelvin)
 
         var displayCount: UInt32 = 0
         CGGetActiveDisplayList(0, nil, &displayCount)
@@ -19,23 +32,48 @@ final class GammaController {
         var displays = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
         CGGetActiveDisplayList(displayCount, &displays, &displayCount)
 
-        let tableSize = 256
-        var red = [CGGammaValue](repeating: 0, count: tableSize)
-        var green = [CGGammaValue](repeating: 0, count: tableSize)
-        var blue = [CGGammaValue](repeating: 0, count: tableSize)
-        for i in 0..<tableSize {
-            let x = Float(i) / Float(tableSize - 1)
-            red[i] = x * Float(r)
-            green[i] = x * Float(g)
-            blue[i] = x * Float(b)
-        }
         for display in displays {
-            CGSetDisplayTransferByTable(display, UInt32(tableSize), red, green, blue)
+            guard let base = baseline(for: display) else { continue }
+            let n = base.size
+            var red = [CGGammaValue](repeating: 0, count: n)
+            var green = [CGGammaValue](repeating: 0, count: n)
+            var blue = [CGGammaValue](repeating: 0, count: n)
+            for i in 0..<n {
+                red[i] = base.red[i] * Float(wr)
+                green[i] = base.green[i] * Float(wg)
+                blue[i] = base.blue[i] * Float(wb)
+            }
+            CGSetDisplayTransferByTable(display, UInt32(n), red, green, blue)
         }
+    }
+
+    /// Reads and caches the display's current ramp. Called before the first tint
+    /// of a display (and after wake/reconfig the system has already reset the
+    /// hardware to calibrated), so the captured table is the untinted baseline.
+    private func baseline(for display: CGDirectDisplayID) -> GammaRamp? {
+        if let cached = baselines[display] { return cached }
+        let capacity = Int(CGDisplayGammaTableCapacity(display))
+        guard capacity > 0 else { return nil }
+        var red = [CGGammaValue](repeating: 0, count: capacity)
+        var green = [CGGammaValue](repeating: 0, count: capacity)
+        var blue = [CGGammaValue](repeating: 0, count: capacity)
+        var sampleCount: UInt32 = 0
+        let err = CGGetDisplayTransferByTable(display, UInt32(capacity),
+                                              &red, &green, &blue, &sampleCount)
+        guard err == .success, sampleCount > 0 else { return nil }
+        let n = Int(sampleCount)
+        let ramp = GammaRamp(red: Array(red[0..<n]),
+                             green: Array(green[0..<n]),
+                             blue: Array(blue[0..<n]), size: n)
+        baselines[display] = ramp
+        return ramp
     }
 
     func restore() {
         currentKelvin = nil
+        // Drop cached baselines: the next run must re-capture, since calibration
+        // (or the set of connected displays) may have changed while we were off.
+        baselines.removeAll()
         CGDisplayRestoreColorSyncSettings()
     }
 
