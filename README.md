@@ -1,7 +1,9 @@
 # macToolKit
 
-Menu bar toolkit for macOS 26+ (Apple Silicon). Three tools, individually
-toggled from the wrench menu bar icon. Optional dock icon ("Show in Dock").
+Menu bar toolkit for macOS 26+ (Apple Silicon). Four tools, individually
+toggled from the wrench menu bar icon. General settings cover appearance
+(System/Light/Dark), an optional dock icon ("Show in Dock") and launch at
+login.
 
 ## Features
 
@@ -10,6 +12,21 @@ toggled from the wrench menu bar icon. Optional dock icon ("Show in Dock").
 | Color temperature (f.lux style) | none | Manual slider or sunset/sunrise auto mode |
 | Rewritely — trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
 | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
+| Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
+
+## Screenshots
+
+| Color Temperature | Rewritely |
+|---|---|
+| ![Color Temperature settings](docs/screenshots/color-temperature.png) | ![Rewritely settings](docs/screenshots/rewritely.png) |
+
+| Scroll Reverser | Window Switcher |
+|---|---|
+| ![Scroll Reverser settings](docs/screenshots/scroll-reverser.png) | ![Window Switcher settings](docs/screenshots/window-switcher.png) |
+
+| General |
+|---|
+| <img src="docs/screenshots/general.png" alt="General settings" width="700"> |
 
 ## Install
 
@@ -76,10 +93,12 @@ certificate and a saved `notarytool` keychain profile named `macToolKit`).
 
 ## First-run setup
 
-1. **Accessibility** — needed only for Scroll Reverser and Rewritely; grant
-   from Settings → General when prompted.
-2. **Rewritely** — requires Apple Intelligence enabled in System Settings.
-3. Auto color temperature can use Location (optional) or fixed times.
+1. **Accessibility** — needed for Scroll Reverser, Rewritely and Window
+   Switcher; grant from Settings → General when prompted.
+2. **Screen Recording** — optional, only for Window Switcher thumbnails;
+   without it the switcher falls back to app-icon tiles.
+3. **Rewritely** — requires Apple Intelligence enabled in System Settings.
+4. Auto color temperature can use Location (optional) or fixed times.
 
 ## How Rewritely works
 
@@ -87,7 +106,8 @@ Type a trigger word at the very end of any text field (e.g.
 `fix this sentnce pls ;;fix`). The app reads the field via Accessibility,
 strips the trigger, runs your per-trigger prompt (`{{text}}` = the field text)
 through the on-device model, and replaces the text in place. Fields without a
-settable AX value (some Electron/web views) use a select-all + paste fallback.
+settable AX value (some Electron/web views) use a clipboard fallback that
+selects to the start of the field so text after the trigger is preserved.
 
 ## Architecture notes
 
@@ -95,5 +115,6 @@ settable AX value (some Electron/web views) use a select-all + paste fallback.
 - Gamma tables (`CGSetDisplayTransferByTable`) are reset by macOS on wake and
   display changes; `ColorTemperatureController` reapplies automatically and
   `CGDisplayRestoreColorSyncSettings()` restores on disable/quit.
-- Event taps run on the main run loop; both auto-recover from
-  `tapDisabledByTimeout`.
+- Scroll Reverser and Window Switcher event taps run on dedicated threads
+  (Rewritely's listen-only tap stays on the main run loop); all auto-recover
+  from `tapDisabledByTimeout`.
