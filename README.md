@@ -118,3 +118,7 @@ selects to the start of the field so text after the trigger is preserved.
 - Scroll Reverser and Window Switcher event taps run on dedicated threads
   (Rewritely's listen-only tap stays on the main run loop); all auto-recover
   from `tapDisabledByTimeout`.
+
+## License
+
+[MIT](LICENSE)
