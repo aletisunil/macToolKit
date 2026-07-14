@@ -30,6 +30,10 @@ final class WindowTracker: ObservableObject {
 
     /// pids, most recently activated first.
     private var appMRU: [pid_t] = []
+    /// CG window ids known to be leftover entries for closed windows (see
+    /// the ghost bookkeeping in `otherSpaceWindows`). Carried across
+    /// refreshes: a ghost is only detectable while its Space is current.
+    private var ghostIDs: Set<CGWindowID> = []
     private var observers: [NSObjectProtocol] = []
     private var refreshInFlight = false
     private var refreshQueued = false
@@ -107,12 +111,14 @@ final class WindowTracker: ObservableObject {
         let options = Options(includeMinimized: includeMinimized,
                               includeOtherSpaces: includeOtherSpaces,
                               includeFullscreen: includeFullscreen,
-                              appMRU: appMRU)
+                              appMRU: appMRU,
+                              knownGhosts: ghostIDs)
 
         Task.detached(priority: .userInitiated) {
-            let snapshot = WindowTracker.snapshot(apps: apps, options: options)
+            let (snapshot, ghosts) = WindowTracker.snapshot(apps: apps, options: options)
             await MainActor.run {
                 self.windows = snapshot
+                self.ghostIDs = ghosts
                 self.refreshInFlight = false
                 if self.refreshQueued {
                     self.refreshQueued = false
@@ -137,10 +143,13 @@ final class WindowTracker: ObservableObject {
         let includeOtherSpaces: Bool
         let includeFullscreen: Bool
         let appMRU: [pid_t]
+        let knownGhosts: Set<CGWindowID>
     }
 
-    private nonisolated static func snapshot(apps: [AppMeta],
-                                             options: Options) -> [WindowInfo] {
+    private nonisolated static func snapshot(
+        apps: [AppMeta],
+        options: Options
+    ) -> (windows: [WindowInfo], ghosts: Set<CGWindowID>) {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let appsByPID = Dictionary(uniqueKeysWithValues: apps.map { ($0.pid, $0) })
 
@@ -160,7 +169,12 @@ final class WindowTracker: ObservableObject {
         let onScreenIDs = Set(onScreenOrder)
 
         // AX pass per app: titles, minimized/hidden/fullscreen state and the
-        // raise handle. Covers the current Space only.
+        // raise handle. Mostly the current Space — but from a fullscreen
+        // Space, AX still exposes other apps' windows on regular Spaces, so
+        // each window's real Space is resolved via CGS: focusing one of
+        // those must switch Spaces explicitly (setFront/makeKey alone never
+        // leaves a fullscreen Space).
+        let spaces = PrivateCGS.available ? PrivateCGS.spaces() : [:]
         var byID: [CGWindowID: WindowInfo] = [:]
         var offscreenByApp: [pid_t: [WindowInfo]] = [:]
         for app in apps where app.pid != ownPID {
@@ -174,6 +188,15 @@ final class WindowTracker: ObservableObject {
                 let isFullscreen = AXWindow.isFullscreen(window)
                 if isFullscreen && !options.includeFullscreen { continue }
 
+                // nil for current-space, minimized (no Space membership)
+                // and unresolvable windows — those focus without switching.
+                let otherSpace: (id: PrivateCGS.SpaceID, number: Int?)? =
+                    PrivateCGS.spaceID(of: id).flatMap { sid in
+                        guard let space = spaces[sid], !space.isCurrent
+                        else { return nil }
+                        return (sid, space.number)
+                    }
+
                 let info = WindowInfo(
                     id: id,
                     axWindow: window,
@@ -185,8 +208,9 @@ final class WindowTracker: ObservableObject {
                     isMinimized: isMinimized,
                     isHidden: app.isHidden,
                     isFullscreen: isFullscreen,
-                    spaceNumber: nil,
-                    isOnActiveSpace: true,
+                    spaceNumber: otherSpace?.number,
+                    spaceID: otherSpace?.id,
+                    isOnActiveSpace: otherSpace == nil,
                     frame: AXWindow.frame(of: window))
                 if onScreenIDs.contains(id) {
                     byID[id] = info
@@ -211,19 +235,22 @@ final class WindowTracker: ObservableObject {
 
         // Other-space windows: CGWindowList over all windows, classified by
         // Space via private CGS. Unavailable API → current-space fallback.
+        var ghosts = options.knownGhosts
         if options.includeOtherSpaces && PrivateCGS.available {
             result.append(contentsOf: otherSpaceWindows(
                 appsByPID: appsByPID, seen: seen, ownPID: ownPID,
-                includeFullscreen: options.includeFullscreen))
+                includeFullscreen: options.includeFullscreen,
+                ghosts: &ghosts))
         }
-        return result
+        return (result, ghosts)
     }
 
     private nonisolated static func otherSpaceWindows(
         appsByPID: [pid_t: AppMeta],
         seen: Set<CGWindowID>,
         ownPID: pid_t,
-        includeFullscreen: Bool
+        includeFullscreen: Bool,
+        ghosts: inout Set<CGWindowID>
     ) -> [WindowInfo] {
         let spaces = PrivateCGS.spaces()
         guard !spaces.isEmpty,
@@ -232,17 +259,36 @@ final class WindowTracker: ObservableObject {
         else { return [] }
 
         var found: [WindowInfo] = []
+        var allIDs = Set<CGWindowID>()
         for entry in list {
             guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0,
                   let id = entry[kCGWindowNumber as String] as? CGWindowID,
-                  !seen.contains(id),
                   let ownerPID = entry[kCGWindowOwnerPID as String] as? pid_t,
                   ownerPID != ownPID,
                   let app = appsByPID[ownerPID],
                   let spaceID = PrivateCGS.spaceID(of: id),
-                  let space = spaces[spaceID],
-                  !space.isCurrent
+                  let space = spaces[spaceID]
             else { continue }
+            allIDs.insert(id)
+
+            // Ghost bookkeeping. Some apps (Notes, Chrome popups) keep
+            // CGWindowList entries for windows that no longer exist — from
+            // another Space they'd show as unfocusable phantom tiles, and no
+            // CG attribute distinguishes them there. But while their Space is
+            // current the truth is visible: a real window is either on screen
+            // or known to AX (minimized/hidden). Remember the leftovers and
+            // skip them once their Space is no longer current. Self-healing:
+            // a window seen real again drops off the list.
+            if space.isCurrent {
+                let isOnscreen = entry[kCGWindowIsOnscreen as String] as? Bool ?? false
+                if isOnscreen || seen.contains(id) {
+                    ghosts.remove(id)
+                } else {
+                    ghosts.insert(id)
+                }
+                continue
+            }
+            guard !seen.contains(id), !ghosts.contains(id) else { continue }
             if space.isFullscreen && !includeFullscreen { continue }
 
             // No AX subrole available here; a minimum size keeps panels and
@@ -253,6 +299,13 @@ final class WindowTracker: ObservableObject {
                                width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
             }
             guard frame.width >= 100, frame.height >= 50 else { continue }
+
+            // A fullscreen Space's real windows are display-height (Split
+            // View halves included); anything shorter is a companion overlay
+            // (Chrome's hover tab strip, the exit-fullscreen bubble) that
+            // would show up as a phantom duplicate entry.
+            if space.isFullscreen,
+               frame.height < 0.75 * displayHeight(containing: frame) { continue }
 
             // kCGWindowName is only populated with Screen Recording access;
             // the app name stands in otherwise.
@@ -269,9 +322,32 @@ final class WindowTracker: ObservableObject {
                 isHidden: app.isHidden,
                 isFullscreen: space.isFullscreen,
                 spaceNumber: space.number,
+                spaceID: spaceID,
                 isOnActiveSpace: false,
                 frame: frame))
         }
+        // Windows that vanished entirely take their ghost record with them.
+        ghosts.formIntersection(allIDs)
         return found.sorted { ($0.spaceNumber ?? .max) < ($1.spaceNumber ?? .max) }
     }
+
+    /// Height of the display best containing `frame` (largest intersection),
+    /// falling back to the main display. CGWindow bounds and CGDisplayBounds
+    /// share the same global top-left coordinate space. CoreGraphics rather
+    /// than NSScreen because the snapshot runs off the main thread.
+    private nonisolated static func displayHeight(containing frame: CGRect) -> CGFloat {
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        var count: UInt32 = 0
+        CGGetActiveDisplayList(UInt32(displays.count), &displays, &count)
+        let best = displays.prefix(Int(count))
+            .map { CGDisplayBounds($0) }
+            .max { a, b in
+                a.intersection(frame).area < b.intersection(frame).area
+            }
+        return best?.height ?? CGDisplayBounds(CGMainDisplayID()).height
+    }
+}
+
+private extension CGRect {
+    var area: CGFloat { isNull ? 0 : width * height }
 }
