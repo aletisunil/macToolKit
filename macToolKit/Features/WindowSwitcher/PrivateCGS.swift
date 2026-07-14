@@ -122,10 +122,11 @@ enum PrivateCGS {
 
     /// Makes `windowID` its app's key window by posting a synthetic
     /// left-click (down + up) addressed to the window id, with the click
-    /// point at (-1,-1) — outside the frame, so no content is hit. This is
-    /// the step that actually makes the WindowServer key a specific window
-    /// and complete a cross-Space jump; `setFrontProcess` alone only fronts
-    /// the process. Ported from AltTab/yabai's window_manager_make_key_window.
+    /// location filled with 0xFF so it can never resolve to a real point
+    /// and hit content. This is the step that actually makes the
+    /// WindowServer key a specific window and complete a cross-Space jump;
+    /// `setFrontProcess` alone only fronts the process. Ported from
+    /// AltTab/yabai's window_manager_make_key_window.
     static func makeKeyWindow(pid: pid_t, windowID: CGWindowID) -> Bool {
         guard let getProcessForPID, let postEventRecordTo else { return false }
         var psn = ProcessSerialNumber()
@@ -136,8 +137,7 @@ enum PrivateCGS {
         var bytes = [UInt8](repeating: 0, count: 0x100)
         bytes[0x04] = 0xf8 // record length
         bytes[0x3a] = 0x10 // required, undocumented
-        var point = CGPoint(x: -1, y: -1) // window-relative click location
-        withUnsafeBytes(of: &point) { bytes.replaceSubrange(0x20..<0x30, with: $0) }
+        for index in 0x20..<0x30 { bytes[index] = 0xff } // click location
         var id = windowID
         withUnsafeBytes(of: &id) { bytes.replaceSubrange(0x3c..<0x40, with: $0) }
 

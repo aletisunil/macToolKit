@@ -24,12 +24,6 @@ struct WindowInfo: Identifiable, @unchecked Sendable {
     /// Mission Control number of the window's Space; nil on the current
     /// space, for fullscreen spaces, or when the private API is unavailable.
     let spaceNumber: Int?
-    /// CGS id of the window's Space when it lived on another Space at
-    /// snapshot time; nil on the current space. Drives the Space badge and
-    /// filters. `focus()` re-resolves the Space live instead of trusting
-    /// this — the snapshot may predate a Space change (e.g. the app just
-    /// went fullscreen) and a stale nil would skip the explicit switch.
-    let spaceID: PrivateCGS.SpaceID?
     let isOnActiveSpace: Bool
     let frame: CGRect
 
@@ -40,19 +34,49 @@ struct WindowInfo: Identifiable, @unchecked Sendable {
     }
 
     /// The window's Space right now, when that Space is not the current
-    /// one. Resolved live because the snapshot's `spaceID` can be stale —
-    /// most notably a snapshot taken on the normal Space just before the
-    /// frontmost app went fullscreen, where every window still reads
-    /// "current space". nil = already current / can't tell, so no switch.
+    /// one. Resolved live at focus time rather than from the snapshot — the
+    /// snapshot can be stale, most notably one taken on the normal Space
+    /// just before the frontmost app went fullscreen, where every window
+    /// still reads "current space". nil = already current / can't tell, so
+    /// no switch. (A closed window also resolves to no Spaces — deliberately
+    /// no switch for it either.)
     private var otherSpaceIDNow: PrivateCGS.SpaceID? {
-        let liveIDs = PrivateCGS.spaceIDs(of: id)
-        let ids = liveIDs.isEmpty ? spaceID.map { [$0] } ?? [] : liveIDs
+        let ids = PrivateCGS.spaceIDs(of: id)
         guard !ids.isEmpty else { return nil }
         let spaces = PrivateCGS.spaces()
         // Sticky windows list several spaces; one of them being current
         // means the window is already reachable without a switch.
         if ids.contains(where: { spaces[$0]?.isCurrent == true }) { return nil }
         return ids.first
+    }
+
+    /// One focus attempt: switch to the window's Space when it lives on
+    /// another one, force the app frontmost, key the window and raise it.
+    /// Shared by `focus()` and its post-transition re-assert.
+    @MainActor
+    private func assertFrontmost() -> (fronted: Bool, keyed: Bool, switchedSpace: Bool) {
+        var switchedSpace = false
+        if let sid = otherSpaceIDNow {
+            switchedSpace = PrivateCGS.switchToSpace(sid)
+        }
+        let fronted = PrivateCGS.setFrontProcess(pid: pid, windowID: id)
+        let keyed = PrivateCGS.makeKeyWindow(pid: pid, windowID: id)
+        if let axWindow {
+            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+        }
+        return (fronted, keyed, switchedSpace)
+    }
+
+    /// The user pressed a key or clicked since roughly the last focus()
+    /// call — the re-assert must not fight a deliberate focus change
+    /// (Cmd-Tab, Dock click) made while it was pending.
+    @MainActor
+    private static func userActedRecently(within seconds: Double) -> Bool {
+        [CGEventType.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+            .contains {
+                CGEventSource.secondsSinceLastEventType(.hidSystemState,
+                                                        eventType: $0) < seconds
+            }
     }
 
     /// Unhides/unminimizes if needed, forces the app frontmost, keys the
@@ -68,37 +92,29 @@ struct WindowInfo: Identifiable, @unchecked Sendable {
         if let axWindow, isMinimized {
             AXWindow.setMinimized(axWindow, false)
         }
-        if let sid = otherSpaceIDNow {
-            _ = PrivateCGS.switchToSpace(sid)
-        }
-        let fronted = PrivateCGS.setFrontProcess(pid: pid, windowID: id)
-        _ = PrivateCGS.makeKeyWindow(pid: pid, windowID: id)
-        if let axWindow {
-            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-        }
-        if !fronted || axWindow == nil {
+        let attempt = assertFrontmost()
+        // Cooperative fallback only when the private path failed somewhere:
+        // an unconditional activate() can raise the app's remembered key
+        // window on a *different* Space and undo the explicit switch.
+        if !attempt.fronted || (axWindow == nil && !attempt.keyed) {
             app?.activate()
         }
 
         // A cross-Space arrival can re-activate the destination Space's
         // remembered front app over the one just fronted (the transition
-        // finishes asynchronously ~0.5 s later). Check once after it settles
-        // and re-assert if something stomped the target.
+        // finishes asynchronously ~0.5 s later). Check once after it
+        // settles and re-assert if something stomped the target. Same-space
+        // focuses have no transition, so nothing to guard there.
+        guard attempt.switchedSpace else { return }
         focusGeneration += 1
         let generation = focusGeneration
         Task { [self] in
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard generation == focusGeneration,
-                  NSWorkspace.shared.frontmostApplication?.processIdentifier != pid
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier != pid,
+                  !Self.userActedRecently(within: 0.55)
             else { return }
-            if let sid = otherSpaceIDNow {
-                _ = PrivateCGS.switchToSpace(sid)
-            }
-            _ = PrivateCGS.setFrontProcess(pid: pid, windowID: id)
-            _ = PrivateCGS.makeKeyWindow(pid: pid, windowID: id)
-            if let axWindow {
-                AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-            }
+            _ = assertFrontmost()
         }
     }
 
