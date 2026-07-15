@@ -166,7 +166,6 @@ final class WindowTracker: ObservableObject {
         apps: [AppMeta],
         options: Options
     ) -> (windows: [WindowInfo], ghosts: GhostState) {
-        let ownPID = ProcessInfo.processInfo.processIdentifier
         let appsByPID = Dictionary(uniqueKeysWithValues: apps.map { ($0.pid, $0) })
 
         // Z-ordered (front to back) IDs of normal-layer on-screen windows.
@@ -175,9 +174,7 @@ final class WindowTracker: ObservableObject {
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
             for entry in list {
                 guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0,
-                      let number = entry[kCGWindowNumber as String] as? CGWindowID,
-                      let ownerPID = entry[kCGWindowOwnerPID as String] as? pid_t,
-                      ownerPID != ownPID
+                      let number = entry[kCGWindowNumber as String] as? CGWindowID
                 else { continue }
                 onScreenOrder.append(number)
             }
@@ -194,7 +191,7 @@ final class WindowTracker: ObservableObject {
         let spaces = PrivateCGS.spaces()
         var byID: [CGWindowID: WindowInfo] = [:]
         var offscreenByApp: [pid_t: [WindowInfo]] = [:]
-        for app in apps where app.pid != ownPID {
+        for app in apps {
             let element = AXWindow.appElement(for: app.pid)
             for window in AXWindow.windows(of: element) {
                 guard AXWindow.isSwitchable(window),
@@ -262,7 +259,7 @@ final class WindowTracker: ObservableObject {
                                 candidates: options.knownGhostCandidates)
         if options.includeOtherSpaces && PrivateCGS.available {
             result.append(contentsOf: otherSpaceWindows(
-                appsByPID: appsByPID, seen: seen, ownPID: ownPID,
+                appsByPID: appsByPID, seen: seen,
                 includeFullscreen: options.includeFullscreen,
                 spaces: spaces, ghosts: &ghosts))
         }
@@ -272,7 +269,6 @@ final class WindowTracker: ObservableObject {
     private nonisolated static func otherSpaceWindows(
         appsByPID: [pid_t: AppMeta],
         seen: Set<CGWindowID>,
-        ownPID: pid_t,
         includeFullscreen: Bool,
         spaces: [PrivateCGS.SpaceID: PrivateCGS.SpaceInfo],
         ghosts: inout GhostState
@@ -288,8 +284,7 @@ final class WindowTracker: ObservableObject {
         for entry in list {
             guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0,
                   let id = entry[kCGWindowNumber as String] as? CGWindowID,
-                  let ownerPID = entry[kCGWindowOwnerPID as String] as? pid_t,
-                  ownerPID != ownPID
+                  let ownerPID = entry[kCGWindowOwnerPID as String] as? pid_t
             else { continue }
             // Every listed window keeps its ghost record alive, including
             // ones whose app is currently filtered out (hidden, blacklisted)
