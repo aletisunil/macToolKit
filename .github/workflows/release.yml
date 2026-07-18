@@ -13,6 +13,11 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history: release.sh derives CFBundleVersion from
+          # `git rev-list --count HEAD`; a shallow clone would pin it to 1
+          # and Sparkle would never see a newer version.
+          fetch-depth: 0
 
       - name: Install tools
         run: brew install xcodegen create-dmg
@@ -46,6 +51,11 @@ jobs:
             --password "$NOTARY_PASSWORD"
 
       - name: Build, notarize, staple
+        env:
+          # EdDSA private key that signs the Sparkle update (base64, the
+          # generate_keys -x export). Sparkle clients verify against the
+          # SUPublicEDKey baked into the app.
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           Scripts/release.sh "$VERSION"
@@ -56,12 +66,15 @@ jobs:
         run: |
           # The release may already exist (e.g. created manually before the
           # tag build finished) — upload artifacts to it instead of failing.
+          # appcast.xml rides along; SUFeedURL fetches it via the
+          # releases/latest/download redirect.
           if gh release view "$GITHUB_REF_NAME" --json id >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
-              build/macToolKit.dmg build/macToolKit.zip --clobber
+              build/macToolKit.dmg build/macToolKit.zip build/appcast.xml \
+              --clobber
           else
             gh release create "$GITHUB_REF_NAME" \
-              build/macToolKit.dmg build/macToolKit.zip \
+              build/macToolKit.dmg build/macToolKit.zip build/appcast.xml \
               --title "macToolKit $GITHUB_REF_NAME" \
               --generate-notes
           fi

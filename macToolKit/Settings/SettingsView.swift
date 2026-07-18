@@ -877,6 +877,7 @@ private struct BlacklistRow: View {
 
 private struct GeneralPane: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var updater = UpdaterManager.shared
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var accessibilityGranted = Permissions.accessibilityGranted
 
@@ -926,6 +927,26 @@ private struct GeneralPane: View {
             }
         }
 
+        SectionHeader(title: "Updates")
+
+        Card {
+            CardRow(title: "Automatically check for updates",
+                    caption: "Checks in the background about once a day.") {
+                Toggle("", isOn: $updater.automaticallyChecksForUpdates)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+            RowDivider()
+            CardRow(title: "Check for updates",
+                    caption: "Version \(Bundle.main.shortVersion) installed.") {
+                Button("Check Now…") {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
+            }
+        }
+
         SectionHeader(title: "Permissions")
 
         Card {
@@ -953,10 +974,6 @@ private struct GeneralPane: View {
 /// sections (Powered by / Feedback & Support / Getting started) and a
 /// copyright footer pinned at the bottom.
 private struct AboutPane: View {
-    private var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 28)
@@ -969,7 +986,7 @@ private struct AboutPane: View {
             Text("macToolKit")
                 .font(.system(size: 26, weight: .bold))
                 .padding(.top, 14)
-            Text("Version \(version)")
+            Text("Version \(Bundle.main.shortVersion)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 3)
@@ -1069,5 +1086,12 @@ struct TriggerEditorSheet: View {
         }
         .padding(16)
         .frame(width: 420)
+    }
+}
+
+extension Bundle {
+    /// Marketing version shown in General and About panes.
+    var shortVersion: String {
+        infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
 }

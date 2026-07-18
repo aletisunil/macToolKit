@@ -13,8 +13,9 @@ DerivedData/
 *.xcodeproj
 xcuserdata/
 
-# Claude Code
+# Agent tooling
 .claude/
+.agents/
 
 # Swift Package Manager
 .swiftpm/

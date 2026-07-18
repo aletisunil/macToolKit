@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.7.0"
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -12,8 +16,8 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "1.7"
-    CURRENT_PROJECT_VERSION: 9
+    MARKETING_VERSION: "1.8"
+    CURRENT_PROJECT_VERSION: 10
   configs:
     Debug:
       CODE_SIGN_IDENTITY: "Apple Development"
@@ -35,6 +39,8 @@ targets:
     platform: macOS
     sources:
       - path: macToolKit
+    dependencies:
+      - package: Sparkle
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX)
@@ -55,6 +61,13 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
+        # Sparkle: appcast.xml is uploaded to each GitHub release; the
+        # "latest" redirect keeps this URL stable across versions.
+        SUFeedURL: https://github.com/aletisunil/macToolKit/releases/latest/download/appcast.xml
+        SUPublicEDKey: 01ho/HbvJdYKuyGpQ87otl3+cVE08YHstINQb0dqnUU=
+        # Skip Sparkle's own second-launch consent prompt; the General
+        # settings pane exposes the auto-check toggle instead.
+        SUEnableAutomaticChecks: true
         NSLocationUsageDescription: Used to compute local sunrise and sunset times for automatic color temperature.
         NSLocationWhenInUseUsageDescription: Used to compute local sunrise and sunset times for automatic color temperature.
     entitlements:

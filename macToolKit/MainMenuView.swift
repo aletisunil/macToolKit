@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainMenuView: View {
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var updater = UpdaterManager.shared
 
     var body: some View {
         Toggle("Color Temperature", isOn: $appState.colorTemperatureEnabled)
@@ -11,7 +12,10 @@ struct MainMenuView: View {
 
         Divider()
 
-        Toggle("Show in Dock", isOn: $appState.showInDock)
+        Button("Check for Updates…") {
+            updater.checkForUpdates()
+        }
+        .disabled(!updater.canCheckForUpdates)
 
         Divider()
 

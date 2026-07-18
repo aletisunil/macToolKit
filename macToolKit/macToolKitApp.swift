@@ -16,6 +16,8 @@ struct MacToolKitApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Instantiating starts Sparkle's scheduled background checks.
+        _ = UpdaterManager.shared
         AppState.shared.applyLaunchAppearance()
         if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
             AppState.shared.startEnabledFeatures()

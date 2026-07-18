@@ -26,5 +26,11 @@
 	<string>Used to compute local sunrise and sunset times for automatic color temperature.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Used to compute local sunrise and sunset times for automatic color temperature.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/aletisunil/macToolKit/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>01ho/HbvJdYKuyGpQ87otl3+cVE08YHstINQb0dqnUU=</string>
 </dict>
 </plist>
