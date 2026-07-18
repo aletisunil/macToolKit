@@ -42,6 +42,31 @@ xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" | tail -2
 
+echo "==> Re-signing Sparkle nested components"
+# The SPM Sparkle artifact ships Autoupdate, Updater.app and the XPC
+# services signed by the Sparkle project; xcodebuild re-signs only the
+# framework wrapper. Notarization rejects any Mach-O without our
+# Developer ID + secure timestamp, so sign innermost-out, then re-sign
+# the app because the framework's seal changed.
+IDENTITY="Developer ID Application"
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+for NESTED in \
+  "XPCServices/Downloader.xpc" \
+  "XPCServices/Installer.xpc" \
+  "Autoupdate" \
+  "Updater.app"; do
+  [[ -e "$SPARKLE_FW/Versions/B/$NESTED" ]] || continue
+  codesign --force --options runtime --timestamp \
+    --preserve-metadata=entitlements \
+    --sign "$IDENTITY" "$SPARKLE_FW/Versions/B/$NESTED"
+done
+codesign --force --options runtime --timestamp \
+  --sign "$IDENTITY" "$SPARKLE_FW"
+codesign --force --options runtime --timestamp \
+  --entitlements "macToolKit/macToolKit.entitlements" \
+  --sign "$IDENTITY" "$APP"
+codesign --verify --deep --strict "$APP"
+
 echo "==> Notarizing app"
 ditto -c -k --keepParent "$APP" "$ZIP"
 xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
