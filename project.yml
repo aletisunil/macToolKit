@@ -16,8 +16,8 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "1.8"
-    CURRENT_PROJECT_VERSION: 10
+    MARKETING_VERSION: "1.9"
+    CURRENT_PROJECT_VERSION: 11
   configs:
     Debug:
       CODE_SIGN_IDENTITY: "Apple Development"
@@ -27,20 +27,25 @@ settings:
       # and re-add the stable app in Accessibility when developing.
       BUNDLE_ID_SUFFIX: .debug
       APP_DISPLAY_NAME: "macToolKit Debug"
+      FOLDER_PEEK_DISPLAY_NAME: "Folder Peek Debug"
     Release:
       # Notarization requires Developer ID + hardened runtime + timestamp.
       CODE_SIGN_IDENTITY: "Developer ID Application"
       OTHER_CODE_SIGN_FLAGS: "--timestamp"
       BUNDLE_ID_SUFFIX: ""
       APP_DISPLAY_NAME: macToolKit
+      FOLDER_PEEK_DISPLAY_NAME: "Folder Peek"
 targets:
   macToolKit:
     type: application
     platform: macOS
     sources:
       - path: macToolKit
+        excludes:
+          - Features/FolderPeek
     dependencies:
       - package: Sparkle
+      - target: FolderQuickLookExtension
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX)
@@ -73,10 +78,46 @@ targets:
     entitlements:
       path: macToolKit/macToolKit.entitlements
       properties: {}
+  FolderQuickLookExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: FolderQuickLookExtension
+      - path: macToolKit/Features/FolderPeek
+      - path: macToolKit/Shared/FolderPeekPreferences.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX).FolderQuickLook
+        PRODUCT_NAME: Folder Peek
+        PRODUCT_MODULE_NAME: FolderQuickLookExtension
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+    info:
+      path: FolderQuickLookExtension/Info.plist
+      properties:
+        CFBundleDisplayName: $(FOLDER_PEEK_DISPLAY_NAME)
+        CFBundleName: $(FOLDER_PEEK_DISPLAY_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewViewController
+          NSExtensionAttributes:
+            QLIsDataBasedPreview: false
+            QLSupportedContentTypes:
+              - public.folder
+            QLSupportsSearchableItems: false
+    entitlements:
+      path: FolderQuickLookExtension/FolderQuickLookExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
 schemes:
   macToolKit:
     build:
       targets:
         macToolKit: all
+        FolderQuickLookExtension: all
     run:
       config: Debug
+      executable: macToolKit

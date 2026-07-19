@@ -78,6 +78,7 @@ struct SettingsView: View {
                 case .rewritely: RewritelyPane()
                 case .scrolling: ScrollingPane()
                 case .windowSwitcher: WindowSwitcherPane()
+                case .folderPeek: FolderPeekPane()
                 case .general: GeneralPane()
                 case .about: AboutPane()
                 }
@@ -244,6 +245,37 @@ struct StatusColumn: View {
                 .kerning(1.1)
                 .foregroundStyle(.secondary)
             StatusChip(isOn: isOn, label: label, action: action)
+        }
+    }
+}
+
+/// Neutral status for integrations whose enablement is controlled by macOS.
+struct ManagedStatusColumn: View {
+    let title: String
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .kerning(1.1)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape.2")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("Managed by macOS")
+                    .font(.footnote.weight(.semibold))
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.quaternary.opacity(0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor))
+            )
         }
     }
 }
@@ -873,6 +905,86 @@ private struct BlacklistRow: View {
     }
 }
 
+// MARK: - Folder Peek
+
+private struct FolderPeekPane: View {
+    @StateObject private var preferences = FolderPeekPreferences()
+
+    var body: some View {
+        HeroCard(tab: .folderPeek) {
+            ManagedStatusColumn(title: "Integration")
+        }
+
+        Text("Select a folder in Finder or on the Desktop and press Space. Finder opens Folder Peek in its native Quick Look window; Space or Esc closes it. Files keep their normal previews.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+        SectionHeader(title: "Quick Look Extension")
+
+        Card {
+            CardRow(
+                title: "Folder previews",
+                caption: "Installed with macToolKit. No Accessibility, Automation, Screen Recording or Full Disk Access is required."
+            ) {
+                Button("Extension Settings…") {
+                    Permissions.openExtensionsSettings()
+                }
+            }
+        }
+
+        SectionHeader(title: "Contents")
+
+        Card {
+            CardRow(
+                title: "Show hidden files",
+                caption: "Include items whose names begin with a dot and files marked hidden."
+            ) {
+                Toggle("", isOn: $preferences.showHiddenFiles)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+            RowDivider()
+            CardRow(
+                title: "Depth level",
+                caption: "Automatically show nested folders up to this many levels."
+            ) {
+                Stepper(value: $preferences.depthLevel, in: 1...10) {
+                    Text("\(preferences.depthLevel)")
+                        .monospacedDigit()
+                        .frame(width: 22)
+                }
+                .fixedSize()
+            }
+            RowDivider()
+            CardRow(
+                title: "Show path bar",
+                caption: "Display the folder's location at the bottom of the preview."
+            ) {
+                Toggle("", isOn: $preferences.showPathBar)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+        }
+
+        SectionHeader(title: "Appearance")
+
+        Card {
+            CardRow(title: "Icon size", caption: nil) {
+                Picker("", selection: $preferences.iconSize) {
+                    ForEach(FolderPeekIconSize.allCases) { size in
+                        Text(size.title).tag(size)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 250)
+            }
+        }
+    }
+}
+
 // MARK: - General
 
 private struct GeneralPane: View {
@@ -951,7 +1063,7 @@ private struct GeneralPane: View {
 
         Card {
             CardRow(title: "Accessibility",
-                    caption: "Used by Scroll Reverser and Rewritely. Color Temperature works without it.") {
+                    caption: "Used by Scroll Reverser, Rewritely and Window Switcher. Color Temperature and Folder Peek work without it.") {
                 if accessibilityGranted {
                     StatusChip(isOn: true, label: ("Granted", "Not granted"))
                 } else {
@@ -997,7 +1109,7 @@ private struct AboutPane: View {
                 .padding(.top, 22)
 
             AboutSection("Tools") {
-                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher")
+                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher · Folder Peek")
                     .font(.footnote)
             }
 

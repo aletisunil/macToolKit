@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// Six-page welcome flow: a welcome overview, one how-to page per feature,
+/// Seven-page welcome flow: a welcome overview, one how-to page per feature,
 /// and a final permissions page. Nothing asks the system for access until
 /// the user reaches the last page and clicks a button there.
 struct OnboardingView: View {
     @EnvironmentObject private var appState: AppState
     @State private var page = 0
 
-    private static let pageCount = 6
+    private static let pageCount = 7
     private var isLastPage: Bool { page == Self.pageCount - 1 }
 
     var body: some View {
@@ -56,6 +56,16 @@ struct OnboardingView: View {
                             "Make it your Cmd-Tab replacement and add more shortcuts in Settings.",
                         ],
                         footnote: "Uses Accessibility access for the shortcut — granted at the last step. Previews need Screen Recording, granted later from Settings.")
+                case 5:
+                    FeaturePage(
+                        tab: .folderPeek,
+                        headline: "Quick Look that actually shows what's in a folder.",
+                        steps: [
+                            "Select a folder in Finder or on the Desktop and press Space.",
+                            "Browse the contents — expand subfolders, sort by any column, double-click to open.",
+                            "Press Space or Esc to close. Files keep the normal Quick Look preview.",
+                        ],
+                        footnote: "Runs as a native Quick Look extension. Finder supplies the selected folder directly, so no extra permission is required.")
                 default:
                     SetupPage()
                 }
@@ -128,7 +138,7 @@ private struct WelcomePage: View {
                     .frame(width: 84, height: 84)
                 Text("Welcome to macToolKit")
                     .font(.title.weight(.semibold))
-                Text("Four small tools for your Mac. Here's the quick tour.")
+                Text("Five small tools for your Mac. Here's the quick tour.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -149,6 +159,9 @@ private struct WelcomePage: View {
                 FeatureRow(tab: .windowSwitcher,
                            title: "Window Switcher",
                            detail: "Hold ⌥ and press Tab to switch between windows with live previews.")
+                FeatureRow(tab: .folderPeek,
+                           title: "Folder Peek",
+                           detail: "Press Space on a folder in Finder to preview its contents.")
             }
             .padding(.horizontal, 44)
         }
@@ -257,7 +270,7 @@ private struct SetupPage: View {
                 SetupRow(
                     step: "1",
                     title: "Grant Accessibility access",
-                    detail: "Used by Scroll Reverser, Rewritely and the Window Switcher to read input events, replace text and control windows. The features start on their own once access is granted.",
+                    detail: "Used by Scroll Reverser, Rewritely and the Window Switcher to read input events, replace text and control windows. Folder Peek works through Quick Look and needs no permission.",
                     done: accessibilityGranted, showsStatus: true
                 ) {
                     Button("Open Accessibility Settings…") {
@@ -280,7 +293,7 @@ private struct SetupPage: View {
 
             Spacer()
 
-            Text("Features can be turned on and off any time from the wrench icon in the menu bar.")
+            Text("The menu-bar tools can be turned on and off any time from the wrench icon.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
