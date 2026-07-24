@@ -356,6 +356,37 @@ struct WarningRow: View {
     }
 }
 
+/// Explains why a tap-backed feature is enabled but not running.
+///
+/// `tapActive == false` has two very different causes and they need
+/// different things from the user: Accessibility hasn't been granted yet
+/// (go grant it), or it has been granted and macOS still refused the event
+/// tap (nothing to grant — it retries on its own). Reporting both as
+/// "waiting for permission" sent people to a settings pane where everything
+/// already looked correct.
+struct TapStatusCard: View {
+    let featureName: String
+    let isEnabled: Bool
+    let tapActive: Bool
+
+    var body: some View {
+        // The permission check only runs when there is already a problem to
+        // explain, so it stays off the normal render path.
+        if isEnabled, !tapActive {
+            Card {
+                if Permissions.accessibilityGranted {
+                    WarningRow(
+                        text: "\(featureName) has Accessibility access, but macOS refused its event tap. Retrying every couple of seconds — if it doesn't recover, quit and reopen macToolKit.",
+                        icon: "arrow.triangle.2.circlepath")
+                } else {
+                    WarningRow(
+                        text: "Waiting for Accessibility permission. \(featureName) starts automatically once it's granted.")
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Display
 
 private struct DisplayPane: View {
@@ -466,11 +497,9 @@ private struct RewritelyPane: View {
                 WarningRow(text: reason, icon: "exclamationmark.triangle.fill")
             }
         }
-        if appState.rewritelyEnabled && !rewritely.tapActive {
-            Card {
-                WarningRow(text: "Waiting for Accessibility permission. Rewritely starts automatically once it's granted.")
-            }
-        }
+        TapStatusCard(featureName: "Rewritely",
+                      isEnabled: appState.rewritelyEnabled,
+                      tapActive: rewritely.tapActive)
 
         SectionHeader(title: "Triggers", actionTitle: "Add Trigger") {
             editingTrigger = RewriteTrigger(
@@ -535,11 +564,9 @@ private struct ScrollingPane: View {
             }
         }
 
-        if appState.scrollReverserEnabled && !scroll.tapActive {
-            Card {
-                WarningRow(text: "Waiting for Accessibility permission. Scroll Reverser starts automatically once it's granted.")
-            }
-        }
+        TapStatusCard(featureName: "Scroll Reverser",
+                      isEnabled: appState.scrollReverserEnabled,
+                      tapActive: scroll.tapActive)
 
         Card {
             CardRow(title: "Trackpad and Magic Mouse",
@@ -595,11 +622,9 @@ private struct WindowSwitcherPane: View {
             }
         }
 
-        if appState.windowSwitcherEnabled && !switcher.tapActive {
-            Card {
-                WarningRow(text: "Waiting for Accessibility permission. The switcher starts automatically once it's granted.")
-            }
-        }
+        TapStatusCard(featureName: "The window switcher",
+                      isEnabled: appState.windowSwitcherEnabled,
+                      tapActive: switcher.tapActive)
 
         SectionHeader(title: "Shortcuts",
                       actionTitle: shortcuts.slots.count < ShortcutStore.maxSlots
