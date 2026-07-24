@@ -27,6 +27,7 @@ struct FolderPeekPreferencesTests {
         let keys = [
             FolderPeekDefaults.showHiddenFiles, FolderPeekDefaults.depthLevel,
             FolderPeekDefaults.showPathBar, FolderPeekDefaults.iconSize,
+            FolderPeekDefaults.didMigrateKey,
         ]
         let saved = keys.map { ($0, store.object(forKey: $0)) }
         defer {
@@ -99,6 +100,66 @@ struct FolderPeekPreferencesTests {
             #expect(settings.showPathBar)
             #expect(settings.iconSize == .regular)
         }
+    }
+
+    /// The upgrade path for everyone already running 1.9: their settings sit
+    /// in NSGlobalDomain and have to end up in the group container, exactly
+    /// once, without the "already migrated" flag being claimed before the
+    /// values actually moved.
+    @Test("Legacy global-domain settings are adopted, then cleared")
+    func legacyValuesAreMigrated() {
+        withPreservedStore {
+            let store = FolderPeekDefaults.store
+            for key in [FolderPeekDefaults.showHiddenFiles,
+                        FolderPeekDefaults.depthLevel,
+                        FolderPeekDefaults.showPathBar,
+                        FolderPeekDefaults.iconSize,
+                        FolderPeekDefaults.didMigrateKey] {
+                store.removeObject(forKey: key)
+            }
+            Self.setLegacy(FolderPeekDefaults.depthLevel, 8)
+            Self.setLegacy(FolderPeekDefaults.showHiddenFiles, true)
+
+            FolderPeekDefaults.migrateFromGlobalDomain(into: store)
+
+            let settings = FolderPeekSettings.load()
+            #expect(settings.depthLevel == 8, "legacy depth was not adopted")
+            #expect(settings.showHiddenFiles, "legacy hidden-files was not adopted")
+            #expect(store.bool(forKey: FolderPeekDefaults.didMigrateKey))
+            #expect(Self.legacyValue(FolderPeekDefaults.depthLevel) == nil,
+                    "legacy key was left behind in NSGlobalDomain")
+        }
+    }
+
+    /// A value already in the container wins: the app may have written it
+    /// after the extension adopted an older one.
+    @Test("Migration doesn't clobber a value already in the container")
+    func migrationKeepsExistingValues() {
+        withPreservedStore {
+            let store = FolderPeekDefaults.store
+            store.removeObject(forKey: FolderPeekDefaults.didMigrateKey)
+            store.set(4, forKey: FolderPeekDefaults.depthLevel)
+            Self.setLegacy(FolderPeekDefaults.depthLevel, 9)
+
+            FolderPeekDefaults.migrateFromGlobalDomain(into: store)
+
+            #expect(FolderPeekSettings.load().depthLevel == 4)
+        }
+    }
+
+    private static func setLegacy(_ key: String, _ value: Any) {
+        CFPreferencesSetValue(
+            ("com.sunilaleti.mactoolkit.folderPeek." + key) as CFString,
+            value as AnyObject,
+            kCFPreferencesAnyApplication, kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost)
+    }
+
+    private static func legacyValue(_ key: String) -> CFPropertyList? {
+        CFPreferencesCopyValue(
+            ("com.sunilaleti.mactoolkit.folderPeek." + key) as CFString,
+            kCFPreferencesAnyApplication, kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost)
     }
 
     /// The old build wrote these into NSGlobalDomain, where they outlived the

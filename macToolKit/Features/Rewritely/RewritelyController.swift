@@ -45,6 +45,30 @@ final class RewritelyController: ObservableObject {
             return
         }
         cancelPermissionPoll()
+        attachTap()
+
+        // Switching apps means a different text field — drop the buffer.
+        if observers.isEmpty {
+            let observer = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification,
+                object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.buffer = "" }
+            }
+            observers.append(observer)
+        }
+        // Started even if the tap creation above failed, so it can retry.
+        startWatchdog()
+    }
+
+    /// One attempt at creating the tap. `CGEvent.tapCreate` can fail even with
+    /// Accessibility granted — most often right after login, while the window
+    /// server and TCC are still settling — and a failure here used to be
+    /// terminal: no watchdog was started, the permission poll had already been
+    /// cancelled, and nothing else called `start()` again, so trigger words
+    /// silently did nothing until the feature was toggled or the app
+    /// relaunched. The watchdog retries this every 2 s instead.
+    private func attachTap() {
+        guard tap == nil else { return }
         let mask: CGEventMask =
             (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.leftMouseDown.rawValue)
@@ -64,15 +88,6 @@ final class RewritelyController: ObservableObject {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         tapActive = true
-        startWatchdog()
-
-        // Switching apps means a different text field — drop the buffer.
-        let observer = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.buffer = "" }
-        }
-        observers.append(observer)
     }
 
     func cancelPermissionPoll() {
@@ -115,7 +130,13 @@ final class RewritelyController: ObservableObject {
         guard watchdog == nil else { return }
         watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let tap = self.tap else { return }
+                guard let self else { return }
+                guard let tap = self.tap else {
+                    // Tap creation failed earlier; keep trying rather than
+                    // leaving the feature dead until the next toggle.
+                    self.attachTap()
+                    return
+                }
                 if !CGEvent.tapIsEnabled(tap: tap) {
                     CGEvent.tapEnable(tap: tap, enable: true)
                 }

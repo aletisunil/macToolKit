@@ -111,27 +111,52 @@ enum FolderPeekDefaults {
     private static let legacyKeys = [
         "showHiddenFiles", "depthLevel", "showPathBar", "iconSize", "layout",
     ]
+    /// Internal so the tests can reset it and re-run the migration.
+    static let didMigrateKey = "didMigrateFromGlobalDomain"
+
+    private static var isAppExtension: Bool {
+        Bundle.main.bundleURL.pathExtension == "appex"
+    }
 
     /// One-time move of any values still sitting in `NSGlobalDomain`, then
-    /// deletes them from there. Writes to the global domain are redirected
-    /// inside the sandbox, so only the app can actually clean up — the
-    /// extension just adopts the values it finds.
-    private static func migrateFromGlobalDomain(into defaults: UserDefaults) {
-        guard !defaults.bool(forKey: "didMigrateFromGlobalDomain") else { return }
+    /// deletes them from there.
+    ///
+    /// Only the app finishes the migration. The flag lives in the shared
+    /// container, and the extension usually runs first — Finder loads it
+    /// whenever someone presses Space on a folder, which needs no app launch.
+    /// Writes to the global domain are redirected inside its sandbox, so if it
+    /// were allowed to claim the migration the legacy keys would sit there
+    /// forever, and if its reads are redirected too every existing user's
+    /// settings would reset to defaults. It adopts whatever it can still read
+    /// instead, and leaves the flag to the app.
+    static func migrateFromGlobalDomain(into defaults: UserDefaults) {
+        guard !defaults.bool(forKey: didMigrateKey) else { return }
+        adoptLegacyValues(into: defaults)
+        guard !isAppExtension else { return }
+        removeLegacyValues()
+        defaults.set(true, forKey: didMigrateKey)
+    }
 
+    /// Copies legacy values into the group container without clobbering
+    /// anything already set there. Idempotent, so the extension repeating it
+    /// until the app runs costs nothing.
+    private static func adoptLegacyValues(into defaults: UserDefaults) {
+        for key in legacyKeys where key != "layout" {
+            guard defaults.object(forKey: key) == nil,
+                  let value = CFPreferencesCopyValue(
+                    (legacyPrefix + key) as CFString,
+                    kCFPreferencesAnyApplication,
+                    kCFPreferencesCurrentUser,
+                    kCFPreferencesAnyHost)
+            else { continue }
+            defaults.set(value, forKey: key)
+        }
+    }
+
+    private static func removeLegacyValues() {
         for key in legacyKeys {
-            let legacyKey = legacyPrefix + key
-            guard let value = CFPreferencesCopyValue(
-                legacyKey as CFString,
-                kCFPreferencesAnyApplication,
-                kCFPreferencesCurrentUser,
-                kCFPreferencesAnyHost) else { continue }
-            // Don't clobber a value already set in the group container.
-            if defaults.object(forKey: key) == nil, key != "layout" {
-                defaults.set(value, forKey: key)
-            }
             CFPreferencesSetValue(
-                legacyKey as CFString, nil,
+                (legacyPrefix + key) as CFString, nil,
                 kCFPreferencesAnyApplication,
                 kCFPreferencesCurrentUser,
                 kCFPreferencesAnyHost)
@@ -140,6 +165,5 @@ enum FolderPeekDefaults {
             kCFPreferencesAnyApplication,
             kCFPreferencesCurrentUser,
             kCFPreferencesAnyHost)
-        defaults.set(true, forKey: "didMigrateFromGlobalDomain")
     }
 }

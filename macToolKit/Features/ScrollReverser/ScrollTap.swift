@@ -90,7 +90,18 @@ final class ScrollTap: ObservableObject {
             return
         }
         cancelPermissionPoll()
+        attachCore()
+        // Started even if the tap creation above failed, so it can retry.
+        startWatchdog()
+    }
 
+    /// One attempt at creating the tap. `CGEvent.tapCreate` can fail even with
+    /// Accessibility granted, most often right after login while the window
+    /// server and TCC are still settling. The watchdog retries this rather
+    /// than re-running `start()`, whose missing-permission branch would fire
+    /// the system Accessibility prompt every two seconds.
+    private func attachCore() {
+        guard core == nil else { return }
         let core = TapCore(config: config)
         self.core = core
         core.start { [weak self] ok in
@@ -100,7 +111,6 @@ final class ScrollTap: ObservableObject {
                 if !ok { self.core = nil }
             }
         }
-        startWatchdog()
     }
 
     func cancelPermissionPoll() {
@@ -126,11 +136,9 @@ final class ScrollTap: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 guard let core = self.core else {
-                    // Tap creation failed (it can, even with Accessibility
-                    // granted, while things settle after login). `start()`
-                    // guards on a nil core, so this simply retries it rather
-                    // than leaving the feature dead until the next toggle.
-                    self.start()
+                    // Tap creation failed earlier; keep trying rather than
+                    // leaving the feature dead until the next toggle.
+                    self.attachCore()
                     return
                 }
                 self.tapActive = core.ensureEnabled()
