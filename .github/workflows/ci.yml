@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      # Unit tests load into the host app, which must carry a Team ID matching
+      # the test bundle. CI has no Developer ID certificate, so both are signed
+      # ad-hoc here instead of with the team identity used for releases.
+      - name: Build and test
+        run: |
+          xcodebuild test \
+            -project macToolKit.xcodeproj \
+            -scheme macToolKit \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            | xcpretty && exit ${PIPESTATUS[0]}
