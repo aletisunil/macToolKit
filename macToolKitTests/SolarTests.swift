@@ -69,11 +69,11 @@ struct SolarTests {
                                                  calendar: calendar))
 
             #expect(calendar.isDate(times.sunrise, inSameDayAs: now),
-                    "\(city.name) at \(hour):00 — sunrise on the wrong local day")
+                    "\(city.name) at \(hour):00 - sunrise on the wrong local day")
             #expect(calendar.isDate(times.sunset, inSameDayAs: now),
-                    "\(city.name) at \(hour):00 — sunset on the wrong local day")
+                    "\(city.name) at \(hour):00 - sunset on the wrong local day")
             #expect(times.sunrise < times.sunset,
-                    "\(city.name) at \(hour):00 — sunrise must precede sunset")
+                    "\(city.name) at \(hour):00 - sunrise must precede sunset")
         }
     }
 

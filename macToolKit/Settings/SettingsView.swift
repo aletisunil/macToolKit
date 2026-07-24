@@ -376,7 +376,7 @@ struct TapStatusCard: View {
             Card {
                 if Permissions.accessibilityGranted {
                     WarningRow(
-                        text: "\(featureName) has Accessibility access, but macOS refused its event tap. Retrying every couple of seconds — if it doesn't recover, quit and reopen macToolKit.",
+                        text: "\(featureName) has Accessibility access, but macOS didn't let it start. Retrying automatically. If it doesn't recover, quit and reopen macToolKit.",
                         icon: "arrow.triangle.2.circlepath")
                 } else {
                     WarningRow(
