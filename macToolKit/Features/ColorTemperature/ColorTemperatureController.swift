@@ -11,10 +11,10 @@ enum ColorTemperatureMode: String {
 /// because macOS resets gamma tables on both.
 @MainActor
 final class ColorTemperatureController: NSObject, ObservableObject, CLLocationManagerDelegate {
-    static let dayKelvin: Double = 6500
-    static let minKelvin: Double = 2700
-    static let maxKelvin: Double = 6500
-    static let transitionSeconds: TimeInterval = 30 * 60
+    nonisolated static let dayKelvin: Double = 6500
+    nonisolated static let minKelvin: Double = 2700
+    nonisolated static let maxKelvin: Double = 6500
+    nonisolated static let transitionSeconds: TimeInterval = 30 * 60
 
     private let gamma = GammaController()
     private var timer: Timer?
@@ -103,9 +103,15 @@ final class ColorTemperatureController: NSObject, ObservableObject, CLLocationMa
     /// sunset start / before sunrise end.
     func targetKelvin(at date: Date) -> Double {
         guard mode == .auto else { return kelvin }
-
         let (sunrise, sunset) = scheduleTimes(for: date)
-        let night = kelvin
+        return Self.targetKelvin(at: date, sunrise: sunrise, sunset: sunset,
+                                 night: kelvin)
+    }
+
+    /// The schedule decision on its own, free of controller state so it can be
+    /// exercised directly against any sunrise/sunset pair.
+    nonisolated static func targetKelvin(at date: Date, sunrise: Date,
+                                         sunset: Date, night: Double) -> Double {
         let day = Self.dayKelvin
         let fade = Self.transitionSeconds
 
@@ -127,7 +133,8 @@ final class ColorTemperatureController: NSObject, ObservableObject, CLLocationMa
     /// Interpolate color temperature in mired (reciprocal-Kelvin) space, which is
     /// perceptually linear. Interpolating Kelvin directly makes the fade look
     /// fast-then-slow; mired keeps the visible shift even across the transition.
-    static func fade(from: Double, to: Double, progress: Double) -> Double {
+    nonisolated static func fade(from: Double, to: Double,
+                                 progress: Double) -> Double {
         let t = min(max(progress, 0), 1)
         let mFrom = 1_000_000 / from
         let mTo = 1_000_000 / to

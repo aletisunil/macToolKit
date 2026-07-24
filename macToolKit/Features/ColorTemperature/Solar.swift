@@ -63,6 +63,18 @@ enum Solar {
         var utcCalendar = Calendar(identifier: .gregorian)
         utcCalendar.timeZone = TimeZone(identifier: "UTC")!
         let startOfDayUTC = utcCalendar.startOfDay(for: date)
-        return startOfDayUTC.addingTimeInterval(utc * 3600)
+        let candidate = startOfDayUTC.addingTimeInterval(utc * 3600)
+
+        // `utc` is a wrapped hour-of-day, so anchoring it to the UTC start of
+        // day can land the event a whole day either side of the local day the
+        // caller asked about — yesterday's sunset in the Americas, tomorrow's
+        // sunrise in Japan. Sunrise and sunset both sit within ±12 h of local
+        // noon, so picking the day-shifted candidate nearest local noon
+        // resolves it for every timezone offset.
+        let localNoon = calendar.startOfDay(for: date).addingTimeInterval(12 * 3600)
+        let day: TimeInterval = 24 * 3600
+        return [-day, 0, day]
+            .map(candidate.addingTimeInterval)
+            .min { abs($0.timeIntervalSince(localNoon)) < abs($1.timeIntervalSince(localNoon)) }
     }
 }
