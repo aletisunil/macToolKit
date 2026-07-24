@@ -42,6 +42,9 @@ final class WindowTracker: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var refreshInFlight = false
     private var refreshQueued = false
+    /// Bumped by `stop()` so a snapshot still running in the background can't
+    /// repopulate the list after the feature was turned off.
+    private var runGeneration = 0
 
     func start() {
         guard observers.isEmpty else { return }
@@ -82,6 +85,9 @@ final class WindowTracker: ObservableObject {
         observers.forEach(center.removeObserver)
         observers.removeAll()
         windows = []
+        runGeneration += 1
+        refreshInFlight = false
+        refreshQueued = false
     }
 
     private func noteActivated(_ pid: pid_t) {
@@ -97,6 +103,7 @@ final class WindowTracker: ObservableObject {
             return
         }
         refreshInFlight = true
+        let generation = runGeneration
 
         // App metadata is gathered on the main actor; the background pass
         // only does CGWindowList + AX + CGS calls.
@@ -123,6 +130,8 @@ final class WindowTracker: ObservableObject {
         Task.detached(priority: .userInitiated) {
             let (snapshot, ghosts) = WindowTracker.snapshot(apps: apps, options: options)
             await MainActor.run {
+                // Dropped on the floor if the feature was stopped meanwhile.
+                guard self.runGeneration == generation else { return }
                 self.windows = snapshot
                 self.ghostIDs = ghosts.confirmed
                 self.ghostCandidateIDs = ghosts.candidates

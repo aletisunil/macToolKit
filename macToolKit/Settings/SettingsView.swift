@@ -611,11 +611,13 @@ private struct WindowSwitcherPane: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
 
+        let conflicts = shortcuts.conflictingSlotIDs
         ForEach($shortcuts.slots) { $slot in
             ShortcutSlotCard(
                 slot: $slot,
                 index: shortcuts.slots.firstIndex(where: { $0.id == slot.id }) ?? 0,
-                removable: shortcuts.slots.count > 1
+                removable: shortcuts.slots.count > 1,
+                conflicted: conflicts.contains(slot.id)
             ) {
                 shortcuts.slots.removeAll { $0.id == slot.id }
             }
@@ -794,6 +796,8 @@ private struct ShortcutSlotCard: View {
     @Binding var slot: ShortcutSlot
     let index: Int
     let removable: Bool
+    /// An earlier slot already uses this chord, so this one never fires.
+    var conflicted = false
     let onRemove: () -> Void
 
     var body: some View {
@@ -813,6 +817,11 @@ private struct ShortcutSlotCard: View {
                     .buttonStyle(.plain)
                     .help("Remove shortcut")
                 }
+            }
+            if conflicted {
+                WarningRow(
+                    text: "Another shortcut already uses \(slot.chordDescription). This one won't fire until you change it.",
+                    icon: "exclamationmark.triangle.fill")
             }
             RowDivider()
             CardRow(title: "Hold", caption: nil) {

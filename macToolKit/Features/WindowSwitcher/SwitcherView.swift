@@ -45,7 +45,9 @@ struct SwitcherView: View {
                               alignment: controller.alignment,
                               controller: controller)
                     .onHover { hovering in
-                        if hovering { controller.selection = index }
+                        if hovering, controller.hoverCanSelect() {
+                            controller.selection = index
+                        }
                     }
                     .onTapGesture {
                         controller.selection = index
@@ -67,7 +69,9 @@ struct SwitcherView: View {
                               selected: index == controller.selection,
                               scale: scale)
                         .onHover { hovering in
-                            if hovering { controller.selection = index }
+                            if hovering, controller.hoverCanSelect() {
+                                controller.selection = index
+                            }
                         }
                         .onTapGesture {
                             controller.selection = index
@@ -96,7 +100,9 @@ struct SwitcherView: View {
                          alignment: controller.alignment,
                          scale: scale)
                     .onHover { hovering in
-                        if hovering { controller.selection = index }
+                        if hovering, controller.hoverCanSelect() {
+                            controller.selection = index
+                        }
                     }
                     .onTapGesture {
                         controller.selection = index

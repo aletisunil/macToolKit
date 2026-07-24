@@ -122,4 +122,19 @@ final class ShortcutStore: ObservableObject {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
     }
+
+    /// Ids of slots whose chord is already claimed by an earlier slot. The tap
+    /// matches the first trigger for a chord, so a duplicate slot is dead —
+    /// the settings pane flags these instead of letting it fail silently.
+    var conflictingSlotIDs: Set<UUID> {
+        var seen: Set<String> = []
+        var conflicts: Set<UUID> = []
+        for slot in slots {
+            let chord = "\(slot.holdModifier.rawValue)+\(slot.key.rawValue)"
+            if !seen.insert(chord).inserted {
+                conflicts.insert(slot.id)
+            }
+        }
+        return conflicts
+    }
 }

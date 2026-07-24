@@ -24,6 +24,12 @@ final class ThumbnailService: ObservableObject {
         let current = generation
         let targets = windows.filter { !$0.isMinimized }.map(\.id)
 
+        // Drop images for windows that have since closed. Without this the
+        // cache only ever grows: every window opened during the session keeps
+        // a full-size CGImage alive for as long as the app runs.
+        let live = Set(windows.map(\.id))
+        thumbnails = thumbnails.filter { live.contains($0.key) }
+
         Task {
             // onScreenWindowsOnly: false so other-space windows can be
             // captured too (SCK can screenshot them without switching).

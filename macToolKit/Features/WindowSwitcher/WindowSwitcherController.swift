@@ -142,6 +142,13 @@ final class WindowSwitcherController: ObservableObject {
     private var targetScreen: NSScreen?
     /// Invalidates a pending delayed panel reveal.
     private var showGeneration = 0
+    /// Mouse location when the panel was revealed. Hover only takes over the
+    /// selection once the pointer has actually moved past `hoverSlop` — the
+    /// panel opens centered under a stationary cursor, and SwiftUI fires
+    /// `onHover` on appearance, which would otherwise replace the alt-tab
+    /// target with whatever tile happens to be under the pointer.
+    private var mouseAnchor: CGPoint?
+    private static let hoverSlop: CGFloat = 6
 
     init() {
         defaults.register(defaults: [
@@ -268,6 +275,7 @@ final class WindowSwitcherController: ObservableObject {
         }
         tap.stop()
         tracker.stop()
+        thumbnails.clearCache()
         tapActive = false
         running = false
     }
@@ -330,7 +338,20 @@ final class WindowSwitcherController: ObservableObject {
         }
     }
 
+    /// Whether a hover should be allowed to move the selection. False until
+    /// the pointer leaves the position it was in when the panel appeared.
+    func hoverCanSelect() -> Bool {
+        guard let anchor = mouseAnchor else { return true }
+        let mouse = NSEvent.mouseLocation
+        guard hypot(mouse.x - anchor.x, mouse.y - anchor.y) > Self.hoverSlop else {
+            return false
+        }
+        mouseAnchor = nil // pointer moved for real; hover is live from here on
+        return true
+    }
+
     private func revealPanel() {
+        mouseAnchor = NSEvent.mouseLocation
         panel.show(
             content: SwitcherView(controller: self, thumbnails: thumbnails),
             options: SwitcherPanel.Options(screen: targetScreen,
@@ -399,6 +420,7 @@ final class WindowSwitcherController: ObservableObject {
     private func hideSwitcher() {
         shown = false
         showGeneration += 1
+        mouseAnchor = nil
         panel.hide()
         tap.switcherVisible = false
     }
