@@ -16,6 +16,7 @@ final class RewritelyController: ObservableObject {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var permissionPoll: Timer?
+    private var watchdog: Timer?
     private var buffer = ""
     private var busy = false
     private var observers: [NSObjectProtocol] = []
@@ -63,6 +64,7 @@ final class RewritelyController: ObservableObject {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         tapActive = true
+        startWatchdog()
 
         // Switching apps means a different text field — drop the buffer.
         let observer = NSWorkspace.shared.notificationCenter.addObserver(
@@ -80,6 +82,8 @@ final class RewritelyController: ObservableObject {
 
     func stop() {
         cancelPermissionPoll()
+        watchdog?.invalidate()
+        watchdog = nil
         if let tap {
             CGEvent.tapEnable(tap: tap, enable: false)
             // Without this the server-side tap leaks (stays registered,
@@ -99,6 +103,25 @@ final class RewritelyController: ObservableObject {
 
     func reenableAfterTimeout() {
         if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+    }
+
+    /// macOS disables taps it considers too slow. The in-callback re-enable
+    /// only fires if the disable notification is actually delivered, and this
+    /// tap's source lives on the main run loop, so a stalled main thread is
+    /// exactly when the notification is most likely to be missed. Poll as a
+    /// backstop — same watchdog ScrollTap and SwitcherTap run — and keep
+    /// `tapActive` honest so the settings pane stops claiming it is running.
+    private func startWatchdog() {
+        guard watchdog == nil else { return }
+        watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let tap = self.tap else { return }
+                if !CGEvent.tapIsEnabled(tap: tap) {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                }
+                self.tapActive = CGEvent.tapIsEnabled(tap: tap)
+            }
+        }
     }
 
     // MARK: Buffer
@@ -205,7 +228,7 @@ final class RewritelyController: ObservableObject {
         await KeySim.backspace(times: trigger.word.count)
 
         let pasteboard = NSPasteboard.general
-        let savedItems = pasteboard.string(forType: .string)
+        let savedItems = Self.snapshot(pasteboard)
         pasteboard.clearContents()
 
         // Select only the text before the caret (the trigger was just removed),
@@ -237,11 +260,27 @@ final class RewritelyController: ObservableObject {
         restore(pasteboard, to: savedItems)
     }
 
-    private func restore(_ pasteboard: NSPasteboard, to saved: String?) {
-        pasteboard.clearContents()
-        if let saved {
-            pasteboard.setString(saved, forType: .string)
+    /// Detached copy of everything on the pasteboard. `NSPasteboardItem`s
+    /// belonging to the pasteboard are invalidated by `clearContents()`, so
+    /// each item's data has to be copied out up front — and every type has to
+    /// come along, not just plain text: the user's clipboard may well hold an
+    /// image, files or rich text that the rewrite would otherwise destroy.
+    private static func snapshot(_ pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        (pasteboard.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
         }
+    }
+
+    private func restore(_ pasteboard: NSPasteboard, to saved: [NSPasteboardItem]) {
+        pasteboard.clearContents()
+        guard !saved.isEmpty else { return }
+        pasteboard.writeObjects(saved)
     }
 
     /// Splits the field value at the caret into the text before the trigger and
