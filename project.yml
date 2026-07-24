@@ -16,8 +16,8 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "1.9"
-    CURRENT_PROJECT_VERSION: 11
+    MARKETING_VERSION: "2.0"
+    CURRENT_PROJECT_VERSION: 12
     # Shared container for the Folder Peek settings the app writes and the
     # sandboxed Quick Look extension reads. Team-prefixed, so Developer ID
     # signing needs no provisioning profile. Carries BUNDLE_ID_SUFFIX so a
