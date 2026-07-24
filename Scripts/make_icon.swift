@@ -1,6 +1,7 @@
 // One-off generator for AppIcon.appiconset. Run:
 //   swift Scripts/make_icon.swift
-// Renders a flat macOS squircle icon — slate background, wrench glyph.
+// Renders a flat macOS squircle icon - slate background, rectangle-group glyph
+// (matches the menu bar icon in macToolKitApp.swift).
 import AppKit
 
 let outDir = "macToolKit/Assets.xcassets/AppIcon.appiconset"
@@ -28,7 +29,7 @@ func render(px: Int) -> Data? {
 
     let config = NSImage.SymbolConfiguration(pointSize: s * 0.46, weight: .medium)
         .applying(.init(paletteColors: [NSColor(calibratedWhite: 0.96, alpha: 1)]))
-    if let symbol = NSImage(systemSymbolName: "wrench.and.screwdriver.fill",
+    if let symbol = NSImage(systemSymbolName: "rectangle.3.group.fill",
                             accessibilityDescription: nil)?
         .withSymbolConfiguration(config) {
         let size = symbol.size

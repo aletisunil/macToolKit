@@ -20,7 +20,7 @@ struct OnboardingView: View {
                         tab: .display,
                         headline: "Warms the display in the evening so it's easier on the eyes.",
                         steps: [
-                            "Turn it on from the wrench icon in the menu bar.",
+                            "Turn it on from the macToolKit icon in the menu bar.",
                             "Drag the slider for a fixed warmth, or pick Automatic to follow sunset and sunrise.",
                             "Automatic mode can use your location for exact sun times — macOS asks only if you choose it.",
                         ],
@@ -40,7 +40,7 @@ struct OnboardingView: View {
                         tab: .scrolling,
                         headline: "Flip scroll direction per device.",
                         steps: [
-                            "Turn it on from the wrench icon in the menu bar.",
+                            "Turn it on from the macToolKit icon in the menu bar.",
                             "Choose what to flip: the trackpad and Magic Mouse, a mouse wheel, or both.",
                             "Each keeps its own direction — natural on the trackpad, classic on the wheel.",
                         ],
@@ -290,7 +290,7 @@ private struct SetupPage: View {
 
             Spacer()
 
-            Text("The menu-bar tools can be turned on and off any time from the wrench icon.")
+            Text("The menu-bar tools can be turned on and off any time from the menu bar icon.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)

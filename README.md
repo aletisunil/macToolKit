@@ -1,7 +1,7 @@
 # macToolKit
 
 Menu bar toolkit for macOS 26+ (Apple Silicon). Five tools, individually
-toggled from the wrench menu bar icon (Folder Peek is a Quick Look extension
+toggled from the menu bar icon (Folder Peek is a Quick Look extension
 that macOS manages). General settings cover appearance (System/Light/Dark), an
 optional dock icon ("Show in Dock") and launch at login.
 
