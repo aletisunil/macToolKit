@@ -1,3 +1,0 @@
-[
-  { "date": "2026-06-11", "scope": "app", "macrostructure": "native-macOS control-center panel + sidebar settings", "theme": "custom (native modern-minimal)", "theme_axes": "light / system-sans / per-feature tints", "enrichment": "none", "brief": "macToolKit · menu-bar utility redesign across menu panel, settings, onboarding" }
-]

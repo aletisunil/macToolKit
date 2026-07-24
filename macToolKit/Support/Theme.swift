@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Hallmark · genre: modern-minimal (native macOS dialect) · design-system: design.md
 // Per-feature tint identity rendered as System-Settings-style gradient icon
 // tiles, shared by the menu panel, the settings sidebar and hero cards, and
 // onboarding. One visual language across every surface.
