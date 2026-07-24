@@ -320,6 +320,15 @@ struct PeekView: View {
         // infinity constraints to an empty placeholder.
         .frame(width: 810, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        // Arrow keys walk the tree, ← / → collapse and expand, Return opens.
+        // Space and Esc are Quick Look's own and are deliberately left alone.
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.upArrow) { model.moveSelection(-1); return .handled }
+        .onKeyPress(.downArrow) { model.moveSelection(1); return .handled }
+        .onKeyPress(.leftArrow) { model.expandSelected(false); return .handled }
+        .onKeyPress(.rightArrow) { model.expandSelected(true); return .handled }
+        .onKeyPress(.return) { model.openSelected(); return .handled }
         .onDisappear { model.cancel() }
     }
 

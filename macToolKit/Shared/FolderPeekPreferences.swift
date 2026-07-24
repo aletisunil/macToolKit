@@ -32,17 +32,17 @@ struct FolderPeekSettings: Sendable {
     var iconSize: FolderPeekIconSize
 
     static func load() -> Self {
+        let defaults = FolderPeekDefaults.store
         return Self(
-            showHiddenFiles: FolderPeekDefaults.bool(
-                for: FolderPeekDefaults.showHiddenFiles, fallback: false),
-            depthLevel: max(1, min(10,
-                FolderPeekDefaults.integer(
-                    for: FolderPeekDefaults.depthLevel, fallback: 3))),
-            showPathBar: FolderPeekDefaults.bool(
-                for: FolderPeekDefaults.showPathBar, fallback: true),
+            showHiddenFiles: defaults.object(forKey: FolderPeekDefaults.showHiddenFiles)
+                as? Bool ?? false,
+            depthLevel: max(1, min(10, defaults.object(forKey: FolderPeekDefaults.depthLevel)
+                as? Int ?? 3)),
+            showPathBar: defaults.object(forKey: FolderPeekDefaults.showPathBar)
+                as? Bool ?? true,
             iconSize: FolderPeekIconSize(
-                rawValue: FolderPeekDefaults.string(
-                    for: FolderPeekDefaults.iconSize) ?? "") ?? .regular)
+                rawValue: defaults.string(forKey: FolderPeekDefaults.iconSize) ?? "")
+                ?? .regular)
     }
 }
 
@@ -68,47 +68,78 @@ final class FolderPeekPreferences: ObservableObject {
     }
 
     private func save(_ value: Any, key: String) {
-        FolderPeekDefaults.set(value, for: key)
+        FolderPeekDefaults.store.set(value, forKey: key)
     }
 }
 
-private enum FolderPeekDefaults {
-    private static let prefix = "com.sunilaleti.mactoolkit.folderPeek."
-    static let showHiddenFiles = "\(prefix)showHiddenFiles"
-    static let depthLevel = "\(prefix)depthLevel"
-    static let showPathBar = "\(prefix)showPathBar"
-    static let iconSize = "\(prefix)iconSize"
+/// Shared between the app and the sandboxed Quick Look extension.
+///
+/// This used to write through `CFPreferences` into `kCFPreferencesAnyApplication`
+/// — i.e. `NSGlobalDomain` — which reaches the sandbox but litters every
+/// process's global preferences with our keys and leaves them behind after
+/// uninstall. An App Group container is the supported channel for exactly this
+/// and stays confined to the app.
+enum FolderPeekDefaults {
+    static let showHiddenFiles = "showHiddenFiles"
+    static let depthLevel = "depthLevel"
+    static let showPathBar = "showPathBar"
+    static let iconSize = "iconSize"
 
-    static func bool(for key: String, fallback: Bool) -> Bool {
-        (value(for: key) as? NSNumber)?.boolValue ?? fallback
-    }
+    /// Group id is team-prefixed and carries the debug bundle suffix, so a
+    /// debug build keeps its own settings. Declared in each target's Info.plist
+    /// from the `APP_GROUP_ID` build setting, keeping one source of truth with
+    /// the entitlements.
+    static let groupIdentifier: String =
+        Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as? String
+            ?? "5432YAY2UX.com.sunilaleti.mactoolkit"
 
-    static func integer(for key: String, fallback: Int) -> Int {
-        (value(for: key) as? NSNumber)?.intValue ?? fallback
-    }
+    // UserDefaults is thread-safe but not Sendable; the store is created once
+    // and only ever read/written through its own synchronized API.
+    nonisolated(unsafe) static let store: UserDefaults = {
+        // A missing/unentitled group yields nil; falling back to `.standard`
+        // keeps the app's own settings pane working rather than silently
+        // dropping every write.
+        let defaults = UserDefaults(suiteName: groupIdentifier) ?? .standard
+        migrateFromGlobalDomain(into: defaults)
+        return defaults
+    }()
 
-    static func string(for key: String) -> String? {
-        value(for: key) as? String
-    }
+    // MARK: Legacy global-domain migration
 
-    static func set(_ value: Any, for key: String) {
-        CFPreferencesSetValue(
-            key as CFString,
-            value as CFPropertyList,
-            kCFPreferencesAnyApplication,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost)
+    private static let legacyPrefix = "com.sunilaleti.mactoolkit.folderPeek."
+    /// `layout` is not read any more — listed so the cleanup takes it with it.
+    private static let legacyKeys = [
+        "showHiddenFiles", "depthLevel", "showPathBar", "iconSize", "layout",
+    ]
+
+    /// One-time move of any values still sitting in `NSGlobalDomain`, then
+    /// deletes them from there. Writes to the global domain are redirected
+    /// inside the sandbox, so only the app can actually clean up — the
+    /// extension just adopts the values it finds.
+    private static func migrateFromGlobalDomain(into defaults: UserDefaults) {
+        guard !defaults.bool(forKey: "didMigrateFromGlobalDomain") else { return }
+
+        for key in legacyKeys {
+            let legacyKey = legacyPrefix + key
+            guard let value = CFPreferencesCopyValue(
+                legacyKey as CFString,
+                kCFPreferencesAnyApplication,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost) else { continue }
+            // Don't clobber a value already set in the group container.
+            if defaults.object(forKey: key) == nil, key != "layout" {
+                defaults.set(value, forKey: key)
+            }
+            CFPreferencesSetValue(
+                legacyKey as CFString, nil,
+                kCFPreferencesAnyApplication,
+                kCFPreferencesCurrentUser,
+                kCFPreferencesAnyHost)
+        }
         CFPreferencesSynchronize(
             kCFPreferencesAnyApplication,
             kCFPreferencesCurrentUser,
             kCFPreferencesAnyHost)
-    }
-
-    private static func value(for key: String) -> Any? {
-        CFPreferencesCopyValue(
-            key as CFString,
-            kCFPreferencesAnyApplication,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesAnyHost)
+        defaults.set(true, forKey: "didMigrateFromGlobalDomain")
     }
 }
