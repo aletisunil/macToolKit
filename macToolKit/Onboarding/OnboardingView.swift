@@ -4,7 +4,6 @@ import SwiftUI
 /// and a final permissions page. Nothing asks the system for access until
 /// the user reaches the last page and clicks a button there.
 struct OnboardingView: View {
-    @EnvironmentObject private var appState: AppState
     @State private var page = 0
 
     private static let pageCount = 7
@@ -77,9 +76,7 @@ struct OnboardingView: View {
 
                 Button {
                     if isLastPage {
-                        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
-                        OnboardingWindowController.shared.close()
-                        appState.startEnabledFeatures()
+                        OnboardingWindowController.shared.finish()
                     } else {
                         page += 1
                     }
