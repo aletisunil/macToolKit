@@ -124,7 +124,15 @@ final class ScrollTap: ObservableObject {
         guard watchdog == nil else { return }
         watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let core = self.core else { return }
+                guard let self else { return }
+                guard let core = self.core else {
+                    // Tap creation failed (it can, even with Accessibility
+                    // granted, while things settle after login). `start()`
+                    // guards on a nil core, so this simply retries it rather
+                    // than leaving the feature dead until the next toggle.
+                    self.start()
+                    return
+                }
                 self.tapActive = core.ensureEnabled()
             }
         }

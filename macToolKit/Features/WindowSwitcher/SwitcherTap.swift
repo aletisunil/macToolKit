@@ -64,9 +64,29 @@ final class SwitcherTap {
     /// Config survives a stop/start cycle (permission poll, toggle).
     private var pendingConfig = SwitcherTapConfig()
 
+    /// Retained so the watchdog can rebuild the tap after a failed creation.
+    private var handler: (@MainActor (SwitcherKeyEvent) -> Void)?
+    private var completion: (@MainActor (Bool) -> Void)?
+
     func start(handler: @escaping @MainActor (SwitcherKeyEvent) -> Void,
                completion: @escaping @MainActor (Bool) -> Void) {
         guard core == nil else { return }
+        self.handler = handler
+        self.completion = completion
+        attachCore()
+        startWatchdog()
+    }
+
+    /// One attempt at creating the tap. `CGEvent.tapCreate` can fail even with
+    /// Accessibility granted — most often right after login, while the
+    /// window server and TCC are still settling — and a failure here used to
+    /// be terminal: the core was dropped, the watchdog bailed on the nil core,
+    /// and the controller's `running` flag kept `start()` from being called
+    /// again. The trigger chord then fell through to the system switcher until
+    /// the feature was toggled or the app relaunched. The watchdog retries
+    /// this every 2 s instead.
+    private func attachCore() {
+        guard core == nil, let handler else { return }
         let core = SwitcherTapCore { event in
             // main-queue dispatch keeps events FIFO; Task {} would not.
             DispatchQueue.main.async {
@@ -81,11 +101,10 @@ final class SwitcherTap {
                     guard self.core === core else { return }
                     self.tapActive = ok
                     if !ok { self.core = nil }
-                    completion(ok)
+                    self.completion?(ok)
                 }
             }
         }
-        startWatchdog()
     }
 
     func stop() {
@@ -93,6 +112,8 @@ final class SwitcherTap {
         watchdog = nil
         core?.shutdown()
         core = nil
+        handler = nil
+        completion = nil
         tapActive = false
     }
 
@@ -103,7 +124,13 @@ final class SwitcherTap {
         guard watchdog == nil else { return }
         watchdog = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, let core = self.core else { return }
+                guard let self else { return }
+                guard let core = self.core else {
+                    // Tap creation failed earlier; keep trying rather than
+                    // leaving the chord to the system switcher forever.
+                    self.attachCore()
+                    return
+                }
                 self.tapActive = core.ensureEnabled()
                 if !self.tapActive { core.setActive(false) }
                 // Backstop for a modifier-release lost entirely, with no
