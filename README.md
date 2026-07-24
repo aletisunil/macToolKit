@@ -1,9 +1,9 @@
 # macToolKit
 
-Menu bar toolkit for macOS 26+ (Apple Silicon). Four tools, individually
-toggled from the wrench menu bar icon. General settings cover appearance
-(System/Light/Dark), an optional dock icon ("Show in Dock") and launch at
-login.
+Menu bar toolkit for macOS 26+ (Apple Silicon). Five tools, individually
+toggled from the wrench menu bar icon (Folder Peek is a Quick Look extension
+that macOS manages). General settings cover appearance (System/Light/Dark), an
+optional dock icon ("Show in Dock") and launch at login.
 
 ## Features
 
@@ -13,6 +13,7 @@ login.
 | Rewritely — trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
 | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
 | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
+| Folder Peek — folder Quick Look | none | Press Space on a folder in Finder; browsable tree with sizes, sorting and depth preload |
 
 ## Screenshots
 
@@ -74,9 +75,16 @@ xcodegen generate
 xcodebuild -project macToolKit.xcodeproj -scheme macToolKit -configuration Debug build
 ```
 
+Run the tests with:
+
+```sh
+xcodebuild -project macToolKit.xcodeproj -scheme macToolKit -configuration Debug test
+```
+
 Signing uses the local "Apple Development" identity (team 5432YAY2UX, set in
-project.yml). The app group is team-prefixed (`5432YAY2UX.…`) so no
-provisioning profile is needed.
+project.yml). The app and the Quick Look extension share a team-prefixed app
+group (`5432YAY2UX.com.sunilaleti.mactoolkit`, `APP_GROUP_ID` in project.yml)
+for the Folder Peek settings, so no provisioning profile is needed.
 
 ## Releasing
 
@@ -116,8 +124,13 @@ selects to the start of the field so text after the trigger is preserved.
   display changes; `ColorTemperatureController` reapplies automatically and
   `CGDisplayRestoreColorSyncSettings()` restores on disable/quit.
 - Scroll Reverser and Window Switcher event taps run on dedicated threads
-  (Rewritely's listen-only tap stays on the main run loop); all auto-recover
-  from `tapDisabledByTimeout`.
+  (Rewritely's listen-only tap stays on the main run loop). All three recover
+  from `tapDisabledByTimeout` both in the tap callback and from a 2 s watchdog,
+  since the disable notification itself can be missed.
+- Folder Peek settings live in the shared app group container, which is how the
+  sandboxed Quick Look extension reads what the app writes. Values from older
+  builds, which used `NSGlobalDomain`, are migrated on first launch and removed
+  from there.
 
 ## License
 
