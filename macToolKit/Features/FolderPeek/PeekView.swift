@@ -315,10 +315,13 @@ struct PeekView: View {
                 breadcrumbBar
             }
         }
-        // Quick Look asks the extension for this exact canvas. An explicit
-        // size also prevents the remote SwiftUI host from resolving flexible
-        // infinity constraints to an empty placeholder.
-        .frame(width: 810, height: 640)
+        // Fill whatever canvas Quick Look hands over - the panel is resizable
+        // and can go full screen, so a fixed size would strand the content in
+        // the top-left corner. The minimum keeps the columns readable; the
+        // hosting view always supplies concrete bounds, so `.infinity` here
+        // resolves against those rather than collapsing to an empty placeholder.
+        .frame(minWidth: 640, minHeight: 420)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         // Arrow keys walk the tree, ← / → collapse and expand, Return opens.
         // Space and Esc are Quick Look's own and are deliberately left alone.
@@ -329,6 +332,9 @@ struct PeekView: View {
         .onKeyPress(.leftArrow) { model.expandSelected(false); return .handled }
         .onKeyPress(.rightArrow) { model.expandSelected(true); return .handled }
         .onKeyPress(.return) { model.openSelected(); return .handled }
+        // Esc is Quick Look's. Once a row is clicked the focus sits inside this
+        // view, and without an explicit pass-through the panel stops closing.
+        .onKeyPress(.escape) { .ignored }
         .onDisappear { model.cancel() }
     }
 

@@ -15,8 +15,22 @@ final class PreviewViewController: NSViewController, @MainActor QLPreviewingCont
             rootView: AnyView(Color(nsColor: .windowBackgroundColor)))
         addChild(hostingController)
         self.hostingController = hostingController
-        view = hostingController.view
-        view.frame = NSRect(origin: .zero, size: preferredPreviewSize)
+
+        // The hosting view is pinned inside a plain container instead of being
+        // the root view itself: Quick Look resizes the root when the panel is
+        // dragged or taken full screen, and the constraints carry that through
+        // to SwiftUI.
+        let container = NSView(frame: NSRect(origin: .zero, size: preferredPreviewSize))
+        let hosted = hostingController.view
+        hosted.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hosted)
+        NSLayoutConstraint.activate([
+            hosted.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hosted.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            hosted.topAnchor.constraint(equalTo: container.topAnchor),
+            hosted.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        view = container
     }
 
     func preparePreviewOfFile(
