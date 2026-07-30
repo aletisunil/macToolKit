@@ -3,13 +3,13 @@ import Combine
 
 enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
     // Feature panes (sidebar "FEATURES" section)
-    case display, rewritely, scrolling, windowSwitcher, folderPeek
+    case display, rewritely, scrolling, windowSwitcher, peek
     // App panes (sidebar "APP" section)
     case general, about
 
     var id: String { rawValue }
 
-    static var featureTabs: [SettingsTab] { [.display, .rewritely, .scrolling, .windowSwitcher, .folderPeek] }
+    static var featureTabs: [SettingsTab] { [.display, .rewritely, .scrolling, .windowSwitcher, .peek] }
     static var appTabs: [SettingsTab] { [.general, .about] }
 
     var title: String {
@@ -19,7 +19,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .rewritely: "Rewritely"
         case .scrolling: "Scroll Reverser"
         case .windowSwitcher: "Window Switcher"
-        case .folderPeek: "Folder Peek"
+        case .peek: "Peek"
         case .about: "About"
         }
     }
@@ -31,7 +31,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .rewritely: "wand.and.stars"
         case .scrolling: "computermouse.fill"
         case .windowSwitcher: "rectangle.stack"
-        case .folderPeek: "folder.badge.questionmark"
+        case .peek: "text.magnifyingglass"
         case .about: "info.circle"
         }
     }
@@ -44,7 +44,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .rewritely: .purple
         case .scrolling: .teal
         case .windowSwitcher: .indigo
-        case .folderPeek: .blue
+        case .peek: .blue
         case .about: .gray
         }
     }
@@ -56,7 +56,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .rewritely: "Type a trigger word at the end of any text field and the text is rewritten in place."
         case .scrolling: "Flip the scroll direction independently for the trackpad and a mouse wheel."
         case .windowSwitcher: "Hold ⌥ and press Tab to switch between windows. Previews, minimized windows and all."
-        case .folderPeek: "Press Space on a folder in Finder to preview its contents — Quick Look, but useful for folders."
+        case .peek: "Press Space on a folder or a .zip in Finder to browse what's inside - Quick Look, but useful."
         case .about: "Version and credits."
         }
     }

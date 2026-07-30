@@ -78,7 +78,7 @@ struct SettingsView: View {
                 case .rewritely: RewritelyPane()
                 case .scrolling: ScrollingPane()
                 case .windowSwitcher: WindowSwitcherPane()
-                case .folderPeek: FolderPeekPane()
+                case .peek: PeekPane()
                 case .general: GeneralPane()
                 case .about: AboutPane()
                 }
@@ -939,17 +939,17 @@ private struct BlacklistRow: View {
     }
 }
 
-// MARK: - Folder Peek
+// MARK: - Peek
 
-private struct FolderPeekPane: View {
-    @StateObject private var preferences = FolderPeekPreferences()
+private struct PeekPane: View {
+    @StateObject private var preferences = PeekPreferences()
 
     var body: some View {
-        HeroCard(tab: .folderPeek) {
+        HeroCard(tab: .peek) {
             ManagedStatusColumn(title: "Integration")
         }
 
-        Text("Select a folder in Finder or on the Desktop and press Space. Finder opens Folder Peek in its native Quick Look window; Space or Esc closes it. Files keep their normal previews.")
+        Text("Select a folder or a .zip in Finder or on the Desktop and press Space. Finder opens Peek in its native Quick Look window; Space or Esc closes it. Everything else keeps its normal preview.")
             .font(.footnote)
             .foregroundStyle(.secondary)
 
@@ -957,7 +957,7 @@ private struct FolderPeekPane: View {
 
         Card {
             CardRow(
-                title: "Folder previews",
+                title: "Folder and archive previews",
                 caption: "Installed with macToolKit. No Accessibility, Automation, Screen Recording or Full Disk Access is required."
             ) {
                 Button("Extension Settings…") {
@@ -1007,7 +1007,7 @@ private struct FolderPeekPane: View {
         Card {
             CardRow(title: "Icon size", caption: nil) {
                 Picker("", selection: $preferences.iconSize) {
-                    ForEach(FolderPeekIconSize.allCases) { size in
+                    ForEach(PeekIconSize.allCases) { size in
                         Text(size.title).tag(size)
                     }
                 }
@@ -1097,7 +1097,7 @@ private struct GeneralPane: View {
 
         Card {
             CardRow(title: "Accessibility",
-                    caption: "Used by Scroll Reverser, Rewritely and Window Switcher. Color Temperature and Folder Peek work without it.") {
+                    caption: "Used by Scroll Reverser, Rewritely and Window Switcher. Color Temperature and Peek work without it.") {
                 if accessibilityGranted {
                     StatusChip(isOn: true, label: ("Granted", "Not granted"))
                 } else {
@@ -1110,6 +1110,21 @@ private struct GeneralPane: View {
         }
         .onReceive(timer) { _ in
             accessibilityGranted = Permissions.accessibilityGranted
+        }
+
+        SectionHeader(title: "Uninstall")
+
+        Card {
+            CardRow(
+                title: "Remove macToolKit",
+                caption: Uninstaller.installedViaHomebrew
+                    ? "Installed with Homebrew — `brew uninstall --zap --cask mactoolkit` is the tidier route."
+                    : "Moves the app to the Trash with its Quick Look extension, and deletes its settings and caches."
+            ) {
+                Button("Uninstall…") {
+                    Uninstaller.run()
+                }
+            }
         }
     }
 }
@@ -1143,7 +1158,7 @@ private struct AboutPane: View {
                 .padding(.top, 22)
 
             AboutSection("Tools") {
-                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher · Folder Peek")
+                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher · Peek")
                     .font(.footnote)
             }
 

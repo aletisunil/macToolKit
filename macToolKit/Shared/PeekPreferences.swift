@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-enum FolderPeekIconSize: String, CaseIterable, Identifiable, Sendable {
+enum PeekIconSize: String, CaseIterable, Identifiable, Sendable {
     case small
     case regular
     case large
@@ -25,42 +25,42 @@ enum FolderPeekIconSize: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct FolderPeekSettings: Sendable {
+struct PeekSettings: Sendable {
     var showHiddenFiles: Bool
     var depthLevel: Int
     var showPathBar: Bool
-    var iconSize: FolderPeekIconSize
+    var iconSize: PeekIconSize
 
     static func load() -> Self {
-        let defaults = FolderPeekDefaults.store
+        let defaults = PeekDefaults.store
         return Self(
-            showHiddenFiles: defaults.object(forKey: FolderPeekDefaults.showHiddenFiles)
+            showHiddenFiles: defaults.object(forKey: PeekDefaults.showHiddenFiles)
                 as? Bool ?? false,
-            depthLevel: max(1, min(10, defaults.object(forKey: FolderPeekDefaults.depthLevel)
+            depthLevel: max(1, min(10, defaults.object(forKey: PeekDefaults.depthLevel)
                 as? Int ?? 3)),
-            showPathBar: defaults.object(forKey: FolderPeekDefaults.showPathBar)
+            showPathBar: defaults.object(forKey: PeekDefaults.showPathBar)
                 as? Bool ?? true,
-            iconSize: FolderPeekIconSize(
-                rawValue: defaults.string(forKey: FolderPeekDefaults.iconSize) ?? "")
+            iconSize: PeekIconSize(
+                rawValue: defaults.string(forKey: PeekDefaults.iconSize) ?? "")
                 ?? .regular)
     }
 }
 
 @MainActor
-final class FolderPeekPreferences: ObservableObject {
-    @Published var showHiddenFiles: Bool { didSet { save(showHiddenFiles, key: FolderPeekDefaults.showHiddenFiles) } }
+final class PeekPreferences: ObservableObject {
+    @Published var showHiddenFiles: Bool { didSet { save(showHiddenFiles, key: PeekDefaults.showHiddenFiles) } }
     @Published var depthLevel: Int {
         didSet {
             let clamped = max(1, min(10, depthLevel))
             if clamped != depthLevel { depthLevel = clamped; return }
-            save(depthLevel, key: FolderPeekDefaults.depthLevel)
+            save(depthLevel, key: PeekDefaults.depthLevel)
         }
     }
-    @Published var showPathBar: Bool { didSet { save(showPathBar, key: FolderPeekDefaults.showPathBar) } }
-    @Published var iconSize: FolderPeekIconSize { didSet { save(iconSize.rawValue, key: FolderPeekDefaults.iconSize) } }
+    @Published var showPathBar: Bool { didSet { save(showPathBar, key: PeekDefaults.showPathBar) } }
+    @Published var iconSize: PeekIconSize { didSet { save(iconSize.rawValue, key: PeekDefaults.iconSize) } }
 
     init() {
-        let settings = FolderPeekSettings.load()
+        let settings = PeekSettings.load()
         showHiddenFiles = settings.showHiddenFiles
         depthLevel = settings.depthLevel
         showPathBar = settings.showPathBar
@@ -68,7 +68,7 @@ final class FolderPeekPreferences: ObservableObject {
     }
 
     private func save(_ value: Any, key: String) {
-        FolderPeekDefaults.store.set(value, forKey: key)
+        PeekDefaults.store.set(value, forKey: key)
     }
 }
 
@@ -79,7 +79,7 @@ final class FolderPeekPreferences: ObservableObject {
 /// process's global preferences with our keys and leaves them behind after
 /// uninstall. An App Group container is the supported channel for exactly this
 /// and stays confined to the app.
-enum FolderPeekDefaults {
+enum PeekDefaults {
     static let showHiddenFiles = "showHiddenFiles"
     static let depthLevel = "depthLevel"
     static let showPathBar = "showPathBar"
@@ -153,7 +153,8 @@ enum FolderPeekDefaults {
         }
     }
 
-    private static func removeLegacyValues() {
+    /// Internal so the uninstaller can take these with it too.
+    static func removeLegacyValues() {
         for key in legacyKeys {
             CFPreferencesSetValue(
                 (legacyPrefix + key) as CFString, nil,

@@ -9,25 +9,25 @@ import Testing
 /// silently falls back to the app's own domain, where the extension can't see
 /// it. These tests run in the app host, which carries the same entitlement.
 @MainActor
-struct FolderPeekPreferencesTests {
+struct PeekPreferencesTests {
     /// True only when the running host actually holds the app-group
     /// entitlement. CI signs ad-hoc (no Team ID, so no group container), so
     /// the container assertion below is gated on this rather than quietly
     /// passing against the fallback store.
     nonisolated static var isEntitledForGroup: Bool {
         FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: FolderPeekDefaults.groupIdentifier
+            forSecurityApplicationGroupIdentifier: PeekDefaults.groupIdentifier
         ) != nil
     }
 
     /// Restores whatever was in the store so a test run doesn't clobber the
-    /// developer's own Folder Peek settings.
+    /// developer's own Peek settings.
     private func withPreservedStore(_ body: () throws -> Void) rethrows {
-        let store = FolderPeekDefaults.store
+        let store = PeekDefaults.store
         let keys = [
-            FolderPeekDefaults.showHiddenFiles, FolderPeekDefaults.depthLevel,
-            FolderPeekDefaults.showPathBar, FolderPeekDefaults.iconSize,
-            FolderPeekDefaults.didMigrateKey,
+            PeekDefaults.showHiddenFiles, PeekDefaults.depthLevel,
+            PeekDefaults.showPathBar, PeekDefaults.iconSize,
+            PeekDefaults.didMigrateKey,
         ]
         let saved = keys.map { ($0, store.object(forKey: $0)) }
         defer {
@@ -41,7 +41,7 @@ struct FolderPeekPreferencesTests {
 
     @Test("Group id is team-prefixed")
     func groupIdentifierIsTeamPrefixed() {
-        #expect(FolderPeekDefaults.groupIdentifier.hasPrefix("5432YAY2UX."),
+        #expect(PeekDefaults.groupIdentifier.hasPrefix("5432YAY2UX."),
                 "group id must be team-prefixed to work without a profile")
     }
 
@@ -50,22 +50,22 @@ struct FolderPeekPreferencesTests {
     func storeUsesTheAppGroupContainer() {
         // `UserDefaults(suiteName:)` falls back to `.standard` when the group
         // is unavailable — that fallback is invisible to the extension.
-        let group = FolderPeekDefaults.groupIdentifier
-        #expect(FolderPeekDefaults.store != UserDefaults.standard,
+        let group = PeekDefaults.groupIdentifier
+        #expect(PeekDefaults.store != UserDefaults.standard,
                 "app group \(group) did not resolve; check the application-groups entitlement on both targets")
     }
 
     @Test("Values written by the app read back through the extension's loader")
     func settingsRoundTrip() {
         withPreservedStore {
-            let store = FolderPeekDefaults.store
-            store.set(true, forKey: FolderPeekDefaults.showHiddenFiles)
-            store.set(7, forKey: FolderPeekDefaults.depthLevel)
-            store.set(false, forKey: FolderPeekDefaults.showPathBar)
-            store.set(FolderPeekIconSize.large.rawValue,
-                      forKey: FolderPeekDefaults.iconSize)
+            let store = PeekDefaults.store
+            store.set(true, forKey: PeekDefaults.showHiddenFiles)
+            store.set(7, forKey: PeekDefaults.depthLevel)
+            store.set(false, forKey: PeekDefaults.showPathBar)
+            store.set(PeekIconSize.large.rawValue,
+                      forKey: PeekDefaults.iconSize)
 
-            let settings = FolderPeekSettings.load()
+            let settings = PeekSettings.load()
             #expect(settings.showHiddenFiles)
             #expect(settings.depthLevel == 7)
             #expect(!settings.showPathBar)
@@ -76,25 +76,25 @@ struct FolderPeekPreferencesTests {
     @Test("Depth level is clamped to the supported range on load")
     func depthLevelClamps() {
         withPreservedStore {
-            let store = FolderPeekDefaults.store
-            store.set(99, forKey: FolderPeekDefaults.depthLevel)
-            #expect(FolderPeekSettings.load().depthLevel == 10)
-            store.set(-4, forKey: FolderPeekDefaults.depthLevel)
-            #expect(FolderPeekSettings.load().depthLevel == 1)
+            let store = PeekDefaults.store
+            store.set(99, forKey: PeekDefaults.depthLevel)
+            #expect(PeekSettings.load().depthLevel == 10)
+            store.set(-4, forKey: PeekDefaults.depthLevel)
+            #expect(PeekSettings.load().depthLevel == 1)
         }
     }
 
     @Test("Defaults apply when nothing has been written")
     func unsetKeysFallBackToDefaults() {
         withPreservedStore {
-            let store = FolderPeekDefaults.store
-            for key in [FolderPeekDefaults.showHiddenFiles,
-                        FolderPeekDefaults.depthLevel,
-                        FolderPeekDefaults.showPathBar,
-                        FolderPeekDefaults.iconSize] {
+            let store = PeekDefaults.store
+            for key in [PeekDefaults.showHiddenFiles,
+                        PeekDefaults.depthLevel,
+                        PeekDefaults.showPathBar,
+                        PeekDefaults.iconSize] {
                 store.removeObject(forKey: key)
             }
-            let settings = FolderPeekSettings.load()
+            let settings = PeekSettings.load()
             #expect(!settings.showHiddenFiles)
             #expect(settings.depthLevel == 3)
             #expect(settings.showPathBar)
@@ -109,24 +109,24 @@ struct FolderPeekPreferencesTests {
     @Test("Legacy global-domain settings are adopted, then cleared")
     func legacyValuesAreMigrated() {
         withPreservedStore {
-            let store = FolderPeekDefaults.store
-            for key in [FolderPeekDefaults.showHiddenFiles,
-                        FolderPeekDefaults.depthLevel,
-                        FolderPeekDefaults.showPathBar,
-                        FolderPeekDefaults.iconSize,
-                        FolderPeekDefaults.didMigrateKey] {
+            let store = PeekDefaults.store
+            for key in [PeekDefaults.showHiddenFiles,
+                        PeekDefaults.depthLevel,
+                        PeekDefaults.showPathBar,
+                        PeekDefaults.iconSize,
+                        PeekDefaults.didMigrateKey] {
                 store.removeObject(forKey: key)
             }
-            Self.setLegacy(FolderPeekDefaults.depthLevel, 8)
-            Self.setLegacy(FolderPeekDefaults.showHiddenFiles, true)
+            Self.setLegacy(PeekDefaults.depthLevel, 8)
+            Self.setLegacy(PeekDefaults.showHiddenFiles, true)
 
-            FolderPeekDefaults.migrateFromGlobalDomain(into: store)
+            PeekDefaults.migrateFromGlobalDomain(into: store)
 
-            let settings = FolderPeekSettings.load()
+            let settings = PeekSettings.load()
             #expect(settings.depthLevel == 8, "legacy depth was not adopted")
             #expect(settings.showHiddenFiles, "legacy hidden-files was not adopted")
-            #expect(store.bool(forKey: FolderPeekDefaults.didMigrateKey))
-            #expect(Self.legacyValue(FolderPeekDefaults.depthLevel) == nil,
+            #expect(store.bool(forKey: PeekDefaults.didMigrateKey))
+            #expect(Self.legacyValue(PeekDefaults.depthLevel) == nil,
                     "legacy key was left behind in NSGlobalDomain")
         }
     }
@@ -136,14 +136,14 @@ struct FolderPeekPreferencesTests {
     @Test("Migration doesn't clobber a value already in the container")
     func migrationKeepsExistingValues() {
         withPreservedStore {
-            let store = FolderPeekDefaults.store
-            store.removeObject(forKey: FolderPeekDefaults.didMigrateKey)
-            store.set(4, forKey: FolderPeekDefaults.depthLevel)
-            Self.setLegacy(FolderPeekDefaults.depthLevel, 9)
+            let store = PeekDefaults.store
+            store.removeObject(forKey: PeekDefaults.didMigrateKey)
+            store.set(4, forKey: PeekDefaults.depthLevel)
+            Self.setLegacy(PeekDefaults.depthLevel, 9)
 
-            FolderPeekDefaults.migrateFromGlobalDomain(into: store)
+            PeekDefaults.migrateFromGlobalDomain(into: store)
 
-            #expect(FolderPeekSettings.load().depthLevel == 4)
+            #expect(PeekSettings.load().depthLevel == 4)
         }
     }
 
@@ -166,7 +166,7 @@ struct FolderPeekPreferencesTests {
     /// app. Touching the store runs the migration, which must clear them.
     @Test("Migration leaves no keys behind in the global domain")
     func globalDomainIsCleanedUp() {
-        _ = FolderPeekDefaults.store // force the lazy migration
+        _ = PeekDefaults.store // force the lazy migration
         for key in ["showHiddenFiles", "depthLevel", "showPathBar",
                     "iconSize", "layout"] {
             let legacy = "com.sunilaleti.mactoolkit.folderPeek." + key

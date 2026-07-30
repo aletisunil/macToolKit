@@ -12,32 +12,13 @@ actor FolderScanner {
     /// running total as a lower bound.
     static let deepCap = 100_000
 
-    struct Listing: Sendable {
-        var items: [PeekItem]
-        /// True when enumeration stopped after finding one item beyond
-        /// `listCap`. The exact remainder is intentionally not counted so a
-        /// very wide directory cannot make Quick Look enumerate everything.
-        var hasMoreItems: Bool
-    }
-
-    struct DeepStats: Sendable {
-        var bytes: Int64
-        var files: Int
-        /// Recursive allocated byte totals keyed by directory. The root
-        /// walk builds these in one pass so every visible folder row can
-        /// show a Finder-style calculated size without rescanning subtrees.
-        var folderBytes: [URL: Int64]
-        /// Still counting (progress update) or gave up at `deepCap`.
-        var partial: Bool
-    }
-
     private static let resourceKeys: [URLResourceKey] = [
         .isDirectoryKey, .isPackageKey, .isSymbolicLinkKey,
         .contentModificationDateKey, .fileSizeKey,
         .localizedTypeDescriptionKey, .isHiddenKey,
     ]
 
-    func list(_ url: URL, showHidden: Bool) -> Listing {
+    func list(_ url: URL, showHidden: Bool) -> PeekListing {
         var options: FileManager.DirectoryEnumerationOptions = [
             .skipsSubdirectoryDescendants,
             .skipsPackageDescendants,
@@ -50,14 +31,14 @@ actor FolderScanner {
             includingPropertiesForKeys: Self.resourceKeys,
             options: options,
             errorHandler: nil)
-        else { return Listing(items: [], hasMoreItems: false) }
+        else { return PeekListing(items: [], hasMoreItems: false) }
 
         var items: [PeekItem] = []
         items.reserveCapacity(Self.listCap)
         while items.count <= Self.listCap,
               let itemURL = enumerator.nextObject() as? URL {
             guard !Task.isCancelled else {
-                return Listing(items: [], hasMoreItems: false)
+                return PeekListing(items: [], hasMoreItems: false)
             }
             items.append(Self.item(for: itemURL))
         }
@@ -67,7 +48,7 @@ actor FolderScanner {
             items.removeLast()
         }
         items.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        return Listing(items: items, hasMoreItems: hasMoreItems)
+        return PeekListing(items: items, hasMoreItems: hasMoreItems)
     }
 
     private static func item(for url: URL) -> PeekItem {
@@ -91,7 +72,7 @@ actor FolderScanner {
     /// Nonisolated on purpose: the walk can run for seconds and must not
     /// serialize against the shallow `list` calls on the actor.
     nonisolated func deepStats(of url: URL,
-                   onProgress: @escaping @Sendable (DeepStats) -> Void) -> DeepStats {
+                   onProgress: @escaping @Sendable (PeekDeepStats) -> Void) -> PeekDeepStats {
         var bytes: Int64 = 0
         var files = 0
         var folderBytes: [URL: Int64] = [:]
@@ -102,8 +83,8 @@ actor FolderScanner {
             options: [])
         while let next = enumerator?.nextObject() as? URL {
             if Task.isCancelled {
-                return DeepStats(bytes: bytes, files: files,
-                                 folderBytes: folderBytes, partial: true)
+                return PeekDeepStats(bytes: bytes, files: files,
+                                     folderBytes: folderBytes, partial: true)
             }
             files += 1
             if let values = try? next.resourceValues(
@@ -125,15 +106,15 @@ actor FolderScanner {
                 // Folder totals are published once at the end. Copying a
                 // potentially large dictionary for every progress tick
                 // would make the background walk needlessly expensive.
-                onProgress(DeepStats(bytes: bytes, files: files,
-                                     folderBytes: [:], partial: true))
+                onProgress(PeekDeepStats(bytes: bytes, files: files,
+                                         folderBytes: [:], partial: true))
             }
             if files >= Self.deepCap {
-                return DeepStats(bytes: bytes, files: files,
-                                 folderBytes: folderBytes, partial: true)
+                return PeekDeepStats(bytes: bytes, files: files,
+                                     folderBytes: folderBytes, partial: true)
             }
         }
-        return DeepStats(bytes: bytes, files: files,
-                         folderBytes: folderBytes, partial: false)
+        return PeekDeepStats(bytes: bytes, files: files,
+                             folderBytes: folderBytes, partial: false)
     }
 }
