@@ -1,13 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Drives one peek panel: lazy tree of the folder's contents plus the
-/// header's deep size/count pass. Recreated for every peek, so all state is
-/// per-folder.
+/// Drives one peek panel: lazy tree of the item's contents plus the header's
+/// deep size/count pass. Recreated for every peek, so all state is per-item.
+/// What is being browsed — a folder or an archive — is the provider's business.
 @MainActor
 final class PeekViewModel: ObservableObject {
     let rootURL: URL
-    let settings: FolderPeekSettings
+    let settings: PeekSettings
 
     /// Flattened visible tree (expanded nodes contribute their children).
     @Published private(set) var rows: [PeekNode] = []
@@ -19,10 +19,13 @@ final class PeekViewModel: ObservableObject {
     @Published private(set) var calculating = true
     @Published private(set) var sort = PeekSort()
     @Published var selectedID: URL?
+    /// Quick Look's own chrome overlays our top-left corner in the panel, but
+    /// not in full screen, so the header inset follows this.
+    @Published var isFullScreen = false
 
     var onOpenItem: ((URL) -> Void)?
 
-    private let scanner: FolderScanner
+    private let provider: PeekContentProvider
     private var topNodes: [PeekNode] = []
     private var loadTask: Task<Void, Never>?
     private var statsTask: Task<Void, Never>?
@@ -34,9 +37,9 @@ final class PeekViewModel: ObservableObject {
         var directories: Int
     }
 
-    init(root: URL, scanner: FolderScanner, settings: FolderPeekSettings) {
+    init(root: URL, provider: PeekContentProvider, settings: PeekSettings) {
         self.rootURL = root
-        self.scanner = scanner
+        self.provider = provider
         self.settings = settings
     }
 
@@ -83,11 +86,9 @@ final class PeekViewModel: ObservableObject {
 
     func load() {
         loadTask?.cancel()
-        let scanner = self.scanner
-        let url = rootURL
+        let provider = self.provider
         loadTask = Task {
-            let listing = await scanner.list(
-                rootURL, showHidden: settings.showHiddenFiles)
+            let listing = await provider.children(of: nil)
             guard !Task.isCancelled else { return }
             topLevelCount = listing.items.count
             topLevelCountIsLowerBound = listing.hasMoreItems
@@ -111,7 +112,7 @@ final class PeekViewModel: ObservableObject {
             // Immutable copy: the weak binding itself is a var and can't be
             // captured by the inner Sendable closures.
             let model = self
-            let stats = scanner.deepStats(of: url) { progress in
+            let stats = provider.stats { progress in
                 Task { @MainActor in
                     model?.deepBytes = progress.bytes
                 }
@@ -135,7 +136,7 @@ final class PeekViewModel: ObservableObject {
         statsTask = nil
     }
 
-    private static func nodes(for listing: FolderScanner.Listing, depth: Int) -> [PeekNode] {
+    private static func nodes(for listing: PeekListing, depth: Int) -> [PeekNode] {
         var nodes = listing.items.map { PeekNode(item: $0, depth: depth) }
         if listing.hasMoreItems, let last = listing.items.last {
             // Synthetic trailing row; the URL only has to be a unique id.
@@ -169,8 +170,7 @@ final class PeekViewModel: ObservableObject {
         node.isLoading = true
         flatten()
         Task {
-            let listing = await scanner.list(
-                node.item.url, showHidden: settings.showHiddenFiles)
+            let listing = await provider.children(of: node.item)
             var children = Self.nodes(for: listing, depth: node.depth + 1)
             sortLevel(&children)
             node.children = children
@@ -203,8 +203,7 @@ final class PeekViewModel: ObservableObject {
             budget.directories -= 1
             node.isLoading = true
             flatten()
-            let listing = await scanner.list(
-                node.item.url, showHidden: settings.showHiddenFiles)
+            let listing = await provider.children(of: node.item)
             guard !Task.isCancelled else { return budget }
             var children = Self.nodes(for: listing, depth: node.depth + 1)
             if children.count > budget.rows {
@@ -295,10 +294,17 @@ final class PeekViewModel: ObservableObject {
         if node.isExpanded != expand { toggle(node) }
     }
 
-    func openSelected() {
-        guard let node = rows.first(where: { $0.id == selectedID }),
-              !node.isTruncationMarker else { return }
+    /// False inside an archive, where a row's URL names nothing on disk.
+    var canOpenItems: Bool { provider.canOpenItems }
+
+    func open(_ node: PeekNode) {
+        guard canOpenItems, !node.isTruncationMarker else { return }
         onOpenItem?(node.item.url)
+    }
+
+    func openSelected() {
+        guard let node = rows.first(where: { $0.id == selectedID }) else { return }
+        open(node)
     }
 }
 
@@ -306,6 +312,12 @@ final class PeekViewModel: ObservableObject {
 
 struct PeekView: View {
     @ObservedObject var model: PeekViewModel
+
+    /// Cancels the 8pt horizontal inset a plain `List` applies to every row.
+    /// See `list` - the rows carry their own padding and full-bleed striping.
+    private static let rowInsets = EdgeInsets(
+        top: 0, leading: -PeekChrome.listRowInset,
+        bottom: 0, trailing: -PeekChrome.listRowInset)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -356,10 +368,12 @@ struct PeekView: View {
             Spacer()
         }
         // Quick Look supplies its own close/open/share controls across the
-        // top edge, so keep the folder identity below that native chrome.
+        // top edge, so keep the item's identity below that native chrome —
+        // except in full screen, where reserving the same gap would leave the
+        // header floating. See PeekChrome.
         .padding(.horizontal, 16)
-        .padding(.top, 34)
-        .frame(height: 96)
+        .padding(.top, PeekChrome.headerInset(isFullScreen: model.isFullScreen))
+        .frame(height: PeekChrome.headerHeight(isFullScreen: model.isFullScreen))
     }
 
     private var contents: some View {
@@ -419,19 +433,33 @@ struct PeekView: View {
         .buttonStyle(.plain)
     }
 
+    /// `List`, not `ScrollView` + `LazyVStack`: on macOS this is backed by
+    /// NSTableView, which recycles rows and — the reason it is here — handles
+    /// pixel-precise phased scrolling from a trackpad natively. A LazyVStack
+    /// costs no more to lay out (measured), but leaves momentum scrolling to
+    /// SwiftUI, which is where the panel felt choppy in full screen.
     private var list: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, node in
-                        PeekRowView(
-                            model: model,
-                            node: node,
-                            striped: index % 2 == 1)
-                            .id(node.id)
-                    }
+            List {
+                ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, node in
+                    PeekRowView(
+                        model: model,
+                        node: node,
+                        striped: index % 2 == 1)
+                        .id(node.id)
+                        // The row draws its own background and padding, so the
+                        // table must contribute neither. A plain List still
+                        // insets each row 8pt horizontally, which would shift
+                        // every column against the header; `contentMargins`
+                        // does not reach it, so cancel it here. Measured
+                        // against the previous LazyVStack layout, not guessed.
+                        .listRowInsets(Self.rowInsets)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .onChange(of: model.selectedID) { _, id in
                 if let id { proxy.scrollTo(id) }
             }
@@ -532,7 +560,7 @@ private struct PeekRowView: View {
         .contentShape(Rectangle())
         .background(background)
         .onTapGesture(count: 2) {
-            model.onOpenItem?(node.item.url)
+            model.open(node)
         }
         .onTapGesture {
             model.selectedID = node.id

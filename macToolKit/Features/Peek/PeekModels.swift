@@ -1,21 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// One filesystem entry, as read off the scanner. Value type so it can
-/// cross from the scanner actor to the main actor.
-struct PeekItem: Identifiable, Sendable, Equatable {
-    let url: URL
-    let name: String
-    let isDirectory: Bool
-    let isPackage: Bool
-    /// File byte size; nil for directories (Finder shows "--" there too).
-    let size: Int64?
-    let modified: Date?
-    let kind: String
-
-    var id: URL { url }
-}
-
 /// Sort order for the list; column headers toggle it.
 struct PeekSort: Sendable, Equatable {
     enum Column: Sendable { case name, modified, size, kind }
@@ -65,7 +50,10 @@ final class PeekNode: Identifiable {
     private var cachedIcon: NSImage?
     var icon: NSImage {
         if let cachedIcon { return cachedIcon }
-        let icon = NSWorkspace.shared.icon(forFile: item.url.path)
+        // Archive entries have no file behind their URL, so the path-based
+        // lookup would hand back the generic document icon for every row.
+        let icon = item.contentType.map(NSWorkspace.shared.icon(for:))
+            ?? NSWorkspace.shared.icon(forFile: item.url.path)
         cachedIcon = icon
         return icon
     }

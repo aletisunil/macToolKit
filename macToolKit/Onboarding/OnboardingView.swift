@@ -57,14 +57,14 @@ struct OnboardingView: View {
                         footnote: "Uses Accessibility access for the shortcut — granted at the last step. Previews need Screen Recording, granted later from Settings.")
                 case 5:
                     FeaturePage(
-                        tab: .folderPeek,
-                        headline: "Quick Look that actually shows what's in a folder.",
+                        tab: .peek,
+                        headline: "Quick Look that actually shows what is inside.",
                         steps: [
-                            "Select a folder in Finder or on the Desktop and press Space.",
-                            "Browse the contents — expand subfolders, sort by any column, double-click to open.",
-                            "Press Space or Esc to close. Files keep the normal Quick Look preview.",
+                            "Select a folder or a .zip in Finder or on the Desktop and press Space.",
+                            "Browse the contents - expand subfolders, sort by any column, double-click to open.",
+                            "Press Space or Esc to close. Everything else keeps its normal Quick Look preview.",
                         ],
-                        footnote: "Runs as a native Quick Look extension. Finder supplies the selected folder directly, so no extra permission is required.")
+                        footnote: "Runs as a native Quick Look extension. Finder supplies the selected item directly, so no extra permission is required.")
                 default:
                     SetupPage()
                 }
@@ -156,9 +156,9 @@ private struct WelcomePage: View {
                 FeatureRow(tab: .windowSwitcher,
                            title: "Window Switcher",
                            detail: "Hold ⌥ and press Tab to switch between windows with live previews.")
-                FeatureRow(tab: .folderPeek,
-                           title: "Folder Peek",
-                           detail: "Press Space on a folder in Finder to preview its contents.")
+                FeatureRow(tab: .peek,
+                           title: "Peek",
+                           detail: "Press Space on a folder or a .zip in Finder to browse what is inside.")
             }
             .padding(.horizontal, 44)
         }
@@ -267,7 +267,7 @@ private struct SetupPage: View {
                 SetupRow(
                     step: "1",
                     title: "Grant Accessibility access",
-                    detail: "Used by Scroll Reverser, Rewritely and the Window Switcher to read input events, replace text and control windows. Folder Peek works through Quick Look and needs no permission.",
+                    detail: "Used by Scroll Reverser, Rewritely and the Window Switcher to read input events, replace text and control windows. Peek works through Quick Look and needs no permission.",
                     done: accessibilityGranted, showsStatus: true
                 ) {
                     Button("Open Accessibility Settings…") {

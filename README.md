@@ -1,7 +1,7 @@
 # macToolKit
 
 Menu bar toolkit for macOS 26+ (Apple Silicon). Five tools, individually
-toggled from the menu bar icon (Folder Peek is a Quick Look extension
+toggled from the menu bar icon (Peek is a Quick Look extension
 that macOS manages). General settings cover appearance (System/Light/Dark), an
 optional dock icon ("Show in Dock") and launch at login.
 
@@ -13,7 +13,7 @@ optional dock icon ("Show in Dock") and launch at login.
 | Rewritely — trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
 | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
 | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
-| Folder Peek — folder Quick Look | none | Press Space on a folder in Finder; browsable tree with sizes, sorting and depth preload |
+| Peek — folder and zip Quick Look | none | Press Space on a folder or a `.zip` in Finder; browsable tree with sizes, sorting and depth preload |
 
 ## Screenshots
 
@@ -53,8 +53,7 @@ brew upgrade --cask mactoolkit
 Uninstall:
 
 ```sh
-brew uninstall --cask mactoolkit        # remove the app
-brew uninstall --zap --cask mactoolkit  # also remove settings/caches
+brew uninstall --zap --cask mactoolkit  # app, settings and caches
 ```
 
 ### Manual
@@ -66,6 +65,18 @@ notarized — no Gatekeeper warnings.
 
 After installing either way, see [First-run setup](#first-run-setup) for the
 Accessibility permissions each tool needs.
+
+### Uninstalling
+
+Settings → General → **Uninstall** removes everything: the app moves to the
+Trash (the Peek Quick Look extension ships *inside* the app bundle, so it goes
+with it), the Quick Look registration is dropped immediately rather than at the
+next LaunchServices scan, and the login item, the shared app group container and
+the caches are deleted. Accessibility and Screen Recording grants still have to
+be removed by hand in System Settings — no app can revoke its own TCC entries.
+
+Homebrew installs should use `brew uninstall --zap --cask mactoolkit` instead,
+so Homebrew's own receipt goes away too.
 
 ## Build
 
@@ -84,7 +95,7 @@ xcodebuild -project macToolKit.xcodeproj -scheme macToolKit -configuration Debug
 Signing uses the local "Apple Development" identity (team 5432YAY2UX, set in
 project.yml). The app and the Quick Look extension share a team-prefixed app
 group (`5432YAY2UX.com.sunilaleti.mactoolkit`, `APP_GROUP_ID` in project.yml)
-for the Folder Peek settings, so no provisioning profile is needed.
+for the Peek settings, so no provisioning profile is needed.
 
 ## Releasing
 
@@ -127,10 +138,17 @@ selects to the start of the field so text after the trigger is preserved.
   (Rewritely's listen-only tap stays on the main run loop). All three recover
   from `tapDisabledByTimeout` both in the tap callback and from a 2 s watchdog,
   since the disable notification itself can be missed.
-- Folder Peek settings live in the shared app group container, which is how the
+- Peek settings live in the shared app group container, which is how the
   sandboxed Quick Look extension reads what the app writes. Values from older
   builds, which used `NSGlobalDomain`, are migrated on first launch and removed
   from there.
+- Peek reads a `.zip` through its central directory only
+  (`Shared/ZipCentralDirectory.swift`) — two bounded reads, no decompression, so
+  a multi-gigabyte archive lists as fast as a small one. Folders and archives
+  reach the panel through the same `PeekContentProvider`.
+- Quick Look's window chrome (the close and full-screen buttons) belongs to the
+  host process, not the extension — there is no API to hide it, so the header
+  inset adapts instead.
 
 ## License
 

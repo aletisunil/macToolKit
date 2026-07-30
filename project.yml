@@ -16,9 +16,9 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "2.0"
-    CURRENT_PROJECT_VERSION: 12
-    # Shared container for the Folder Peek settings the app writes and the
+    MARKETING_VERSION: "2.1"
+    CURRENT_PROJECT_VERSION: 13
+    # Shared container for the Peek settings the app writes and the
     # sandboxed Quick Look extension reads. Team-prefixed, so Developer ID
     # signing needs no provisioning profile. Carries BUNDLE_ID_SUFFIX so a
     # debug build keeps its settings separate from the installed stable one.
@@ -32,14 +32,14 @@ settings:
       # and re-add the stable app in Accessibility when developing.
       BUNDLE_ID_SUFFIX: .debug
       APP_DISPLAY_NAME: "macToolKit Debug"
-      FOLDER_PEEK_DISPLAY_NAME: "Folder Peek Debug"
+      PEEK_DISPLAY_NAME: "Peek Debug"
     Release:
       # Notarization requires Developer ID + hardened runtime + timestamp.
       CODE_SIGN_IDENTITY: "Developer ID Application"
       OTHER_CODE_SIGN_FLAGS: "--timestamp"
       BUNDLE_ID_SUFFIX: ""
       APP_DISPLAY_NAME: macToolKit
-      FOLDER_PEEK_DISPLAY_NAME: "Folder Peek"
+      PEEK_DISPLAY_NAME: "Peek"
 targets:
   macToolKit:
     type: application
@@ -47,10 +47,10 @@ targets:
     sources:
       - path: macToolKit
         excludes:
-          - Features/FolderPeek
+          - Features/Peek
     dependencies:
       - package: Sparkle
-      - target: FolderQuickLookExtension
+      - target: PeekExtension
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX)
@@ -108,26 +108,29 @@ targets:
         # it into the host, so it inherits the project-level signing settings.
         GENERATE_INFOPLIST_FILE: YES
 
-  FolderQuickLookExtension:
+  PeekExtension:
     type: app-extension
     platform: macOS
     sources:
-      - path: FolderQuickLookExtension
-      - path: macToolKit/Features/FolderPeek
-      - path: macToolKit/Shared/FolderPeekPreferences.swift
+      - path: PeekExtension
+      - path: macToolKit/Features/Peek
+      # Shared/ is compiled into both targets, so the unit tests reach these
+      # through `@testable import macToolKit` while the sandboxed extension
+      # gets the same code.
+      - path: macToolKit/Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX).FolderQuickLook
-        PRODUCT_NAME: Folder Peek
-        PRODUCT_MODULE_NAME: FolderQuickLookExtension
+        PRODUCT_BUNDLE_IDENTIFIER: com.sunilaleti.mactoolkit$(BUNDLE_ID_SUFFIX).Peek
+        PRODUCT_NAME: Peek
+        PRODUCT_MODULE_NAME: PeekExtension
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES
-        CODE_SIGN_ENTITLEMENTS: FolderQuickLookExtension/FolderQuickLookExtension.entitlements
+        CODE_SIGN_ENTITLEMENTS: PeekExtension/PeekExtension.entitlements
     info:
-      path: FolderQuickLookExtension/Info.plist
+      path: PeekExtension/Info.plist
       properties:
-        CFBundleDisplayName: $(FOLDER_PEEK_DISPLAY_NAME)
-        CFBundleName: $(FOLDER_PEEK_DISPLAY_NAME)
+        CFBundleDisplayName: $(PEEK_DISPLAY_NAME)
+        CFBundleName: $(PEEK_DISPLAY_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         AppGroupIdentifier: $(APP_GROUP_ID)
@@ -136,15 +139,19 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewViewController
           NSExtensionAttributes:
             QLIsDataBasedPreview: false
+            # Folders and zip archives. Verified on macOS 26: OOXML
+            # (.docx/.xlsx) and .epub do NOT conform to public.zip-archive,
+            # so declaring it cannot hijack their previews.
             QLSupportedContentTypes:
               - public.folder
+              - public.zip-archive
             QLSupportsSearchableItems: false
 schemes:
   macToolKit:
     build:
       targets:
         macToolKit: all
-        FolderQuickLookExtension: all
+        PeekExtension: all
         macToolKitTests: [test]
     run:
       config: Debug

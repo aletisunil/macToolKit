@@ -1,14 +1,20 @@
 import AppKit
 @preconcurrency import QuickLookUI
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// Finder owns the Quick Look window and gives this extension the folder URL
-/// being previewed. No global key tap or Finder Apple Event is involved.
+/// Finder owns the Quick Look window and gives this extension the URL being
+/// previewed. No global key tap or Finder Apple Event is involved.
 @MainActor
 final class PreviewViewController: NSViewController, @MainActor QLPreviewingController {
-    private let scanner = FolderScanner()
     private var model: PeekViewModel?
     private var hostingController: NSHostingController<AnyView>?
+
+    /// Declining a preview hands the item back to Quick Look, which falls
+    /// through to whatever it would have shown without this extension.
+    private enum PreviewRefusal: Error {
+        case notPreviewable
+    }
 
     override func loadView() {
         let hostingController = NSHostingController(
@@ -37,7 +43,12 @@ final class PreviewViewController: NSViewController, @MainActor QLPreviewingCont
         at url: URL,
         completionHandler handler: @escaping (Error?) -> Void
     ) {
-        present(folder: url.standardizedFileURL)
+        let url = url.standardizedFileURL
+        guard let provider = provider(for: url) else {
+            handler(PreviewRefusal.notPreviewable)
+            return
+        }
+        presentPeek(url, with: provider)
         // Assigning a SwiftUI root schedules its first render for the next
         // main-run-loop turn. Tell Quick Look the preview is ready only after
         // that pass, otherwise the host snapshots the placeholder view.
@@ -52,11 +63,47 @@ final class PreviewViewController: NSViewController, @MainActor QLPreviewingCont
         model?.cancel()
     }
 
-    private func present(folder url: URL) {
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard let model,
+              let screen = view.window?.screen ?? NSScreen.main else { return }
+        let fullScreen = PeekChrome.isFullScreen(
+            contentHeight: view.bounds.height,
+            visibleFrameHeight: screen.visibleFrame.height)
+        if model.isFullScreen != fullScreen { model.isFullScreen = fullScreen }
+    }
+
+    // MARK: Routing
+
+    /// Picks how to read the item, or nil when Quick Look should keep its own
+    /// preview: the Trash, and anything that is neither a folder nor a zip.
+    private func provider(for url: URL) -> PeekContentProvider? {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .contentTypeKey])
+        let settings = PeekSettings.load()
+
+        switch PeekRouting.target(
+            for: url,
+            isDirectory: values?.isDirectory ?? false,
+            contentType: values?.contentType) {
+        case .folder:
+            return FolderContentProvider(
+                root: url, showHidden: settings.showHiddenFiles)
+        case .archive:
+            // A truncated or otherwise unreadable archive throws here;
+            // refusing keeps the system's plain icon preview rather than
+            // showing an empty tree.
+            return try? ArchiveContentProvider(
+                archive: url, showHidden: settings.showHiddenFiles)
+        case .refuse:
+            return nil
+        }
+    }
+
+    private func presentPeek(_ url: URL, with provider: PeekContentProvider) {
         model?.cancel()
 
-        let settings = FolderPeekSettings.load()
-        let model = PeekViewModel(root: url, scanner: scanner, settings: settings)
+        let model = PeekViewModel(
+            root: url, provider: provider, settings: PeekSettings.load())
         model.onOpenItem = { itemURL in
             NSWorkspace.shared.open(itemURL)
         }
