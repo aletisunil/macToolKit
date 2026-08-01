@@ -33,13 +33,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Instantiating starts Sparkle's scheduled background checks.
         _ = UpdaterManager.shared
         AppState.shared.applyLaunchAppearance()
-        if UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+        if AppState.shared.hasCompletedOnboarding {
             AppState.shared.startEnabledFeatures()
-        } else {
+        } else if isDefaultLaunch(notification) {
             // Features (and their permission prompts) wait until the user
             // finishes the welcome flow.
             OnboardingWindowController.shared.show()
         }
+        // Otherwise: launched at login with onboarding still pending. Opening
+        // a window and stealing focus while someone is logging in is the wrong
+        // thing to do, so stay in the menu bar - MainMenuView offers "Finish
+        // Setup…" for as long as this is unfinished.
+    }
+
+    /// False when macOS started us for its own reasons rather than because
+    /// someone opened the app - a login item, an Apple event, state
+    /// restoration. `SMAppService.mainApp` launches land here.
+    @MainActor
+    private func isDefaultLaunch(_ notification: Notification) -> Bool {
+        notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey]
+            as? Bool ?? true
     }
 
     func applicationWillTerminate(_ notification: Notification) {

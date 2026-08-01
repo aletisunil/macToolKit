@@ -87,6 +87,13 @@ final class AppState: ObservableObject {
 
     @Published var settingsTab: SettingsTab = .general
 
+    /// Published rather than read straight from `UserDefaults`, because the
+    /// menu bar offers "Finish Setup…" while this is false and has to drop it
+    /// the moment the welcome flow completes.
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding") }
+    }
+
     // MARK: Persisted feature toggles
 
     @Published var showInDock: Bool {
@@ -145,6 +152,7 @@ final class AppState: ObservableObject {
         defaults.register(defaults: [
             "showInDock": true,
         ])
+        hasCompletedOnboarding = defaults.bool(forKey: "hasCompletedOnboarding")
         showInDock = defaults.bool(forKey: "showInDock")
         colorTemperatureEnabled = defaults.bool(forKey: "colorTemperatureEnabled")
         scrollReverserEnabled = defaults.bool(forKey: "scrollReverserEnabled")

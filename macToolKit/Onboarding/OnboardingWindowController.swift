@@ -34,7 +34,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     func finish() {
         guard !finished else { return }
         finished = true
-        UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+        AppState.shared.hasCompletedOnboarding = true
         window?.orderOut(nil)
         AppState.shared.startEnabledFeatures()
     }

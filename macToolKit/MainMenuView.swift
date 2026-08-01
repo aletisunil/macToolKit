@@ -5,10 +5,26 @@ struct MainMenuView: View {
     @ObservedObject private var updater = UpdaterManager.shared
 
     var body: some View {
-        Toggle("Color Temperature", isOn: $appState.colorTemperatureEnabled)
-        Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
-        Toggle("Rewritely", isOn: $appState.rewritelyEnabled)
-        Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
+        // Onboarding is skipped at login launches, so this is the way back to
+        // it. Nothing is started until it has run, and the toggles are
+        // disabled to match: left live they would report a feature as on while
+        // it is stopped, and flipping one would fire a permission prompt
+        // before the user has seen the welcome flow that explains it.
+        if !appState.hasCompletedOnboarding {
+            Button("Finish Setup…") {
+                OnboardingWindowController.shared.show()
+            }
+
+            Divider()
+        }
+
+        Group {
+            Toggle("Color Temperature", isOn: $appState.colorTemperatureEnabled)
+            Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
+            Toggle("Rewritely", isOn: $appState.rewritelyEnabled)
+            Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
+        }
+        .disabled(!appState.hasCompletedOnboarding)
 
         Divider()
 
