@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 APP_NAME="macToolKit"
 NOTARY_PROFILE="${NOTARY_PROFILE:-macToolKit}"
 TEAM_ID="5432YAY2UX"
-VERSION="${1:-${VERSION:-2.1}}"
+VERSION="${1:-${VERSION:-2.2}}"
 BUILD_DIR="build"
 ARCHIVE="$BUILD_DIR/$APP_NAME.xcarchive"
 APP="$ARCHIVE/Products/Applications/$APP_NAME.app"
@@ -24,8 +24,46 @@ DMG="$BUILD_DIR/$APP_NAME.dmg"
 DERIVED="$BUILD_DIR/DerivedData"
 # Sparkle compares CFBundleVersion, so every release needs a higher build
 # number than the last; commit count is monotonic on the release branch.
+BUILD_NUMBER_EXPLICIT="${BUILD_NUMBER:-}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 REPO_URL="https://github.com/aletisunil/macToolKit"
+APPCAST_URL="$REPO_URL/releases/latest/download/appcast.xml"
+
+# Preflight, before the ten-minute archive: the two ways this pipeline ships a
+# build Sparkle will refuse to offer, both of which fail silently otherwise.
+
+# 1. Uncommitted work is not in `git rev-list --count HEAD`, so a release built
+#    from a dirty tree reuses the previous build number. Only a derived number
+#    can be wrong this way: an explicit BUILD_NUMBER is the caller's own answer.
+if [[ -z "$BUILD_NUMBER_EXPLICIT" && -n "$(git status --porcelain)" \
+      && -z "${ALLOW_DIRTY:-}" ]]; then
+  echo "FAIL: working tree is dirty, so build number $BUILD_NUMBER does not" >&2
+  echo "      count this work. Commit first, or set ALLOW_DIRTY=1." >&2
+  git status --short >&2
+  exit 1
+fi
+
+# 2. Sparkle upgrades on CFBundleVersion alone, and a number that merely ties
+#    the published one is indistinguishable from no update at all: no error
+#    anywhere, users just never get offered it. Ask the live appcast.
+if [[ -z "${SKIP_BUILD_NUMBER_CHECK:-}" ]]; then
+  # `|| true`: the feed 404s until the first Sparkle-era release, and under
+  # `set -e -o pipefail` a failed curl would otherwise abort the release.
+  PUBLISHED=$(curl -fsSL --max-time 30 "$APPCAST_URL" 2>/dev/null |
+    sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<\/sparkle:version>.*/\1/p' |
+    sort -n | tail -1 || true)
+  if [[ -z "$PUBLISHED" ]]; then
+    echo "==> No published appcast reachable - skipping build-number check"
+  elif (( BUILD_NUMBER <= PUBLISHED )); then
+    echo "FAIL: build number $BUILD_NUMBER is not newer than the published" >&2
+    echo "      $PUBLISHED, so Sparkle would never offer this update." >&2
+    echo "      Commit at least $((PUBLISHED - BUILD_NUMBER + 1)) more change(s)," >&2
+    echo "      or override with BUILD_NUMBER=$((PUBLISHED + 1))." >&2
+    exit 1
+  else
+    echo "==> Build number $BUILD_NUMBER supersedes published $PUBLISHED"
+  fi
+fi
 
 rm -rf "$BUILD_DIR"
 xcodegen generate
@@ -62,10 +100,58 @@ for NESTED in \
 done
 codesign --force --options runtime --timestamp \
   --sign "$IDENTITY" "$SPARKLE_FW"
+# --preserve-metadata=entitlements, not --entitlements: the checked-in
+# .entitlements file holds the literal `$(APP_GROUP_ID)`, and codesign does no
+# build-setting substitution. Passing it here overwrites the expanded .xcent
+# Xcode already sealed in, leaving the app out of its own App Group - Peek
+# settings then stop reaching the extension and the uninstaller's group
+# container lookup returns nil.
 codesign --force --options runtime --timestamp \
-  --entitlements "macToolKit/macToolKit.entitlements" \
+  --preserve-metadata=entitlements \
   --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP"
+
+echo "==> Verifying entitlements"
+# Cheap guard against the above regressing: an unexpanded build setting or a
+# mismatched group would ship silently, since neither notarization nor
+# Gatekeeper cares what the group id says.
+#
+# The built app's Info.plist is the reference rather than a literal repeated
+# here: `AppGroupIdentifier` is the value PeekDefaults looks up at runtime, so
+# it is the one every other copy has to agree with.
+APPEX="$APP/Contents/PlugIns/Peek.appex"
+EXPECTED_GROUP=$(plutil -extract AppGroupIdentifier raw -o - \
+  "$APP/Contents/Info.plist" 2>/dev/null || true)
+if [[ "$EXPECTED_GROUP" != "$TEAM_ID."* ]]; then
+  echo "FAIL: app Info.plist AppGroupIdentifier is '$EXPECTED_GROUP'," >&2
+  echo "      expected a group prefixed with $TEAM_ID." >&2
+  exit 1
+fi
+
+for BUNDLE in "$APP" "$APPEX"; do
+  ENTS=$(codesign -d --entitlements - --xml "$BUNDLE" 2>/dev/null || true)
+  if [[ "$ENTS" == *'$('* ]]; then
+    echo "FAIL: $BUNDLE carries an unexpanded build setting:" >&2
+    echo "$ENTS" >&2
+    exit 1
+  fi
+  # Two copies to check per bundle: the Info.plist key the code reads and the
+  # entitlement the sandbox grants. plutil splits key paths on dots, so the
+  # entitlement key's own dots need escaping; `|| true` on both so a missing
+  # key reports which bundle below instead of aborting on plutil's own error.
+  DECLARED=$(plutil -extract AppGroupIdentifier raw -o - \
+    "$BUNDLE/Contents/Info.plist" 2>/dev/null || true)
+  GRANTED=$(printf '%s' "$ENTS" |
+    plutil -extract 'com\.apple\.security\.application-groups.0' raw -o - - \
+    2>/dev/null || true)
+  for ACTUAL in "$DECLARED" "$GRANTED"; do
+    if [[ "$ACTUAL" != "$EXPECTED_GROUP" ]]; then
+      echo "FAIL: $BUNDLE app group is '$ACTUAL', expected '$EXPECTED_GROUP'" >&2
+      exit 1
+    fi
+  done
+done
+echo "    app group $EXPECTED_GROUP on app and Peek.appex"
 
 echo "==> Notarizing app"
 ditto -c -k --keepParent "$APP" "$ZIP"
