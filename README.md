@@ -68,15 +68,23 @@ Accessibility permissions each tool needs.
 
 ### Uninstalling
 
-Settings → General → **Uninstall** removes everything: the app moves to the
-Trash (the Peek Quick Look extension ships *inside* the app bundle, so it goes
-with it), the Quick Look registration is dropped immediately rather than at the
-next LaunchServices scan, and the login item, the shared app group container and
-the caches are deleted. Accessibility and Screen Recording grants still have to
-be removed by hand in System Settings — no app can revoke its own TCC entries.
+Homebrew installs: `brew uninstall --zap --cask mactoolkit`, which takes the
+app, its settings and its caches, and Homebrew's own receipt with it.
 
-Homebrew installs should use `brew uninstall --zap --cask mactoolkit` instead,
-so Homebrew's own receipt goes away too.
+Manual installs: turn **Launch at login** off in Settings → General, quit
+macToolKit, and drag it from Applications to the Trash. The Peek Quick Look
+extension ships *inside* the app bundle, so it goes at the same time; its row in
+System Settings disappears whenever LaunchServices next rescans.
+
+Settings live outside the bundle and stay behind. To clear them:
+
+```sh
+rm -rf ~/Library/Group\ Containers/5432YAY2UX.com.sunilaleti.mactoolkit
+rm -f ~/Library/Preferences/com.sunilaleti.mactoolkit.plist
+```
+
+Accessibility and Screen Recording grants have to be removed by hand in System
+Settings — no app can revoke its own TCC entries.
 
 ## Build
 

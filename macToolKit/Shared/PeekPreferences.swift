@@ -153,8 +153,7 @@ enum PeekDefaults {
         }
     }
 
-    /// Internal so the uninstaller can take these with it too.
-    static func removeLegacyValues() {
+    private static func removeLegacyValues() {
         for key in legacyKeys {
             CFPreferencesSetValue(
                 (legacyPrefix + key) as CFString, nil,

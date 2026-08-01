@@ -1111,21 +1111,6 @@ private struct GeneralPane: View {
         .onReceive(timer) { _ in
             accessibilityGranted = Permissions.accessibilityGranted
         }
-
-        SectionHeader(title: "Uninstall")
-
-        Card {
-            CardRow(
-                title: "Remove macToolKit",
-                caption: Uninstaller.installedViaHomebrew
-                    ? "Installed with Homebrew — `brew uninstall --zap --cask mactoolkit` is the tidier route."
-                    : "Moves the app to the Trash with its Quick Look extension, and deletes its settings and caches."
-            ) {
-                Button("Uninstall…") {
-                    Uninstaller.run()
-                }
-            }
-        }
     }
 }
 
