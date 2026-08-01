@@ -16,7 +16,7 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "2.1"
+    MARKETING_VERSION: "2.2"
     CURRENT_PROJECT_VERSION: 13
     # Shared container for the Peek settings the app writes and the
     # sandboxed Quick Look extension reads. Team-prefixed, so Developer ID
@@ -33,6 +33,13 @@ settings:
       BUNDLE_ID_SUFFIX: .debug
       APP_DISPLAY_NAME: "macToolKit Debug"
       PEEK_DISPLAY_NAME: "Peek Debug"
+      # Sparkle offers any build whose CFBundleVersion beats the running one,
+      # and release builds number themselves from the commit count - so a dev
+      # build carrying the placeholder below gets nagged at every launch to
+      # "update" to the published release, which is a downgrade. Sit above
+      # anything that can be published. Releases never read this: release.sh
+      # passes CURRENT_PROJECT_VERSION explicitly.
+      CURRENT_PROJECT_VERSION: 99999
     Release:
       # Notarization requires Developer ID + hardened runtime + timestamp.
       CODE_SIGN_IDENTITY: "Developer ID Application"
