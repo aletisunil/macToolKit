@@ -6,23 +6,13 @@ struct MacToolKitApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var appState = AppState.shared
 
-    // MenuBarExtra's `systemImage:` draws at the symbol's regular weight, which
-    // reads thin next to the system's own menu bar glyphs.
-    private static let menuBarIcon: NSImage = {
-        let image = NSImage(systemSymbolName: "rectangle.3.group",
-                            accessibilityDescription: "macToolKit")?
-            .withSymbolConfiguration(.init(pointSize: 16, weight: .bold))
-            ?? NSImage()
-        image.isTemplate = true
-        return image
-    }()
-
     var body: some Scene {
         MenuBarExtra {
             MainMenuView()
                 .environmentObject(appState)
         } label: {
-            Image(nsImage: Self.menuBarIcon)
+            Image(systemName: "rectangle.3.group")
+                .font(.system(size: 14, weight: .semibold))
         }
         .menuBarExtraStyle(.menu)
     }

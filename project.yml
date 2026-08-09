@@ -16,7 +16,7 @@ settings:
     PROVISIONING_PROFILE_SPECIFIER: ""
     ENABLE_HARDENED_RUNTIME: YES
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    MARKETING_VERSION: "2.2"
+    MARKETING_VERSION: "2.3"
     CURRENT_PROJECT_VERSION: 13
     # Shared container for the Peek settings the app writes and the
     # sandboxed Quick Look extension reads. Team-prefixed, so Developer ID
