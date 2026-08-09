@@ -19,6 +19,7 @@ final class RewritelyController: ObservableObject {
     private var watchdog: Timer?
     private var buffer = ""
     private var busy = false
+    private var interactionGeneration = 0
     private var observers: [NSObjectProtocol] = []
 
     func start() {
@@ -148,7 +149,12 @@ final class RewritelyController: ObservableObject {
     // MARK: Buffer
 
     func handle(_ event: CGEvent, type: CGEventType) {
-        guard !busy else { return }
+        if busy {
+            if !KeySim.isSynthetic(event) {
+                interactionGeneration &+= 1
+            }
+            return
+        }
 
         if type == .leftMouseDown || type == .rightMouseDown {
             buffer = ""
@@ -200,53 +206,69 @@ final class RewritelyController: ObservableObject {
     // MARK: Rewrite flow
 
     private func runRewrite(_ trigger: RewriteTrigger) async {
+        let generation = interactionGeneration
         // Let the final trigger keystroke settle in the target app.
         try? await Task.sleep(for: .milliseconds(120))
+        guard interactionGeneration == generation else { return }
 
-        // Split the field at the caret: the trigger sits immediately before the
-        // insertion point, so only the text preceding it should be rewritten.
+        // AX is safe for reading the field, but writing kAXValue directly is
+        // not: several web/Electron editors update their visible AX value
+        // without updating the real editor model. The field then appears
+        // rewritten but can no longer be edited or copied correctly. Use AX
+        // only to capture the exact text around the caret, then commit the
+        // result through normal keyboard selection and paste events.
         if let element = AXText.focusedElement(),
-           AXText.isValueSettable(element),
            let value = AXText.value(of: element),
            let split = Self.splitAtCursor(trigger.word, value: value,
                                           cursor: AXText.selectedRange(of: element)) {
-            await rewriteViaAX(trigger, element: element,
-                               before: split.before, after: split.after)
+            await rewriteUsingAXSnapshot(trigger, element: element,
+                                         before: split.before, after: split.after,
+                                         interactionGeneration: generation)
         } else {
-            await rewriteViaClipboard(trigger)
+            await rewriteViaClipboard(trigger, interactionGeneration: generation)
         }
     }
 
-    private func rewriteViaAX(_ trigger: RewriteTrigger, element: AXUIElement,
-                              before: String, after: String) async {
+    private func rewriteUsingAXSnapshot(_ trigger: RewriteTrigger, element: AXUIElement,
+                                        before: String, after: String,
+                                        interactionGeneration generation: Int) async {
+        guard await removeTrigger(trigger.word,
+                                  interactionGeneration: generation) else { return }
+
         guard !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            // Nothing to rewrite — just drop the trigger, keep the tail.
-            AXText.setValue(before + after, on: element)
-            AXText.setSelectedRange(
-                NSRange(location: before.utf16.count, length: 0), on: element)
+            // Nothing to rewrite — removing the trigger is enough.
             return
         }
-        AXText.setValue(before + after, on: element) // remove the trigger immediately
+
         RewriteHUD.shared.show("Rewriting…")
         do {
             let rewritten = try await engine.rewrite(before, using: trigger)
-            AXText.setValue(rewritten + after, on: element)
-            AXText.setSelectedRange(
-                NSRange(location: rewritten.utf16.count, length: 0), on: element)
-            RewriteHUD.shared.hide()
+            guard interactionGeneration == generation,
+                  AXText.isFocused(element),
+                  AXText.value(of: element) == before + after else {
+                RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+                return
+            }
+
+            let pasteboard = NSPasteboard.general
+            let savedClipboard = Self.snapshot(pasteboard)
+            let changeCount = pasteboard.changeCount
+            await pasteReplacingTextBeforeCursor(
+                with: rewritten, savedClipboard: savedClipboard,
+                expectedChangeCount: changeCount,
+                interactionGeneration: generation)
         } catch {
-            AXText.setValue(before + after, on: element)
-            AXText.setSelectedRange(
-                NSRange(location: before.utf16.count, length: 0), on: element)
             RewriteHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
         }
     }
 
-    /// Fallback for fields without a settable AX value (many Electron/web
-    /// views): backspace the trigger away, select-all + copy to read the text,
-    /// then paste the rewrite over the selection.
-    private func rewriteViaClipboard(_ trigger: RewriteTrigger) async {
-        await KeySim.backspace(times: trigger.word.count)
+    /// Fallback for fields without a readable AX value: backspace the trigger,
+    /// select from the caret to the start, copy to read the text, then paste
+    /// the rewrite over that same range.
+    private func rewriteViaClipboard(_ trigger: RewriteTrigger,
+                                     interactionGeneration generation: Int) async {
+        guard await removeTrigger(trigger.word,
+                                  interactionGeneration: generation) else { return }
 
         let pasteboard = NSPasteboard.general
         let savedItems = Self.snapshot(pasteboard)
@@ -256,29 +278,97 @@ final class RewritelyController: ObservableObject {
         // so text after the trigger survives the paste.
         await KeySim.selectToStart()
         await KeySim.copy()
-        try? await Task.sleep(for: .milliseconds(150))
+        let copiedTextChangeCount = pasteboard.changeCount
+        try? await Task.sleep(for: .milliseconds(100))
+
+        guard interactionGeneration == generation,
+              pasteboard.changeCount == copiedTextChangeCount else {
+            restore(pasteboard, to: savedItems,
+                    ifChangeCountIs: copiedTextChangeCount)
+            RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+            return
+        }
 
         guard let text = pasteboard.string(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            restore(pasteboard, to: savedItems)
+            restore(pasteboard, to: savedItems,
+                    ifChangeCountIs: copiedTextChangeCount)
             RewriteHUD.shared.flash("Rewritely: couldn't read the text field")
             return
         }
 
+        // Leave the caret where it was instead of holding the user's text
+        // selected during model generation.
+        await KeySim.press(124) // kVK_RightArrow collapses to selection end
+
         RewriteHUD.shared.show("Rewriting…")
         do {
             let rewritten = try await engine.rewrite(text, using: trigger)
-            pasteboard.clearContents()
-            pasteboard.setString(rewritten, forType: .string)
-            await KeySim.paste()
-            RewriteHUD.shared.hide()
+            guard interactionGeneration == generation,
+                  pasteboard.changeCount == copiedTextChangeCount else {
+                restore(pasteboard, to: savedItems,
+                        ifChangeCountIs: copiedTextChangeCount)
+                RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+                return
+            }
+
+            await pasteReplacingTextBeforeCursor(
+                with: rewritten, savedClipboard: savedItems,
+                expectedChangeCount: copiedTextChangeCount,
+                interactionGeneration: generation)
         } catch {
+            restore(pasteboard, to: savedItems,
+                    ifChangeCountIs: copiedTextChangeCount)
             RewriteHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
         }
+    }
 
-        // Give the paste a moment to land before restoring the clipboard.
-        try? await Task.sleep(for: .milliseconds(400))
-        restore(pasteboard, to: savedItems)
+    private func removeTrigger(_ word: String,
+                               interactionGeneration generation: Int) async -> Bool {
+        for _ in word {
+            guard interactionGeneration == generation else { return false }
+            await KeySim.press(51) // kVK_Delete
+        }
+        return interactionGeneration == generation
+    }
+
+    /// Commits through real editor input so the target app updates its own
+    /// model, undo stack, selection, and copy behavior. Clipboard restoration
+    /// is conditional: if the user copies something before restoration, their
+    /// newer clipboard wins.
+    private func pasteReplacingTextBeforeCursor(
+        with rewritten: String,
+        savedClipboard: [NSPasteboardItem],
+        expectedChangeCount: Int,
+        interactionGeneration generation: Int
+    ) async {
+        let pasteboard = NSPasteboard.general
+        guard interactionGeneration == generation,
+              pasteboard.changeCount == expectedChangeCount else {
+            RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+            return
+        }
+
+        await KeySim.selectToStart()
+        guard interactionGeneration == generation,
+              pasteboard.changeCount == expectedChangeCount else {
+            restore(pasteboard, to: savedClipboard,
+                    ifChangeCountIs: expectedChangeCount)
+            RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+            return
+        }
+
+        pasteboard.clearContents()
+        pasteboard.setString(rewritten, forType: .string)
+        let replacementChangeCount = pasteboard.changeCount
+        await KeySim.paste()
+        RewriteHUD.shared.hide()
+
+        // Pasteboard reads are normally synchronous, but allow the target app
+        // a short turn before restoring rich clipboard contents.
+        try? await Task.sleep(for: .milliseconds(150))
+        restore(pasteboard, to: savedClipboard,
+                ifChangeCountIs: replacementChangeCount)
     }
 
     /// Detached copy of everything on the pasteboard. `NSPasteboardItem`s
@@ -298,7 +388,16 @@ final class RewritelyController: ObservableObject {
         }
     }
 
-    private func restore(_ pasteboard: NSPasteboard, to saved: [NSPasteboardItem]) {
+    static func shouldRestorePasteboard(currentChangeCount: Int,
+                                        expectedChangeCount: Int) -> Bool {
+        currentChangeCount == expectedChangeCount
+    }
+
+    private func restore(_ pasteboard: NSPasteboard, to saved: [NSPasteboardItem],
+                         ifChangeCountIs expectedChangeCount: Int) {
+        guard Self.shouldRestorePasteboard(
+            currentChangeCount: pasteboard.changeCount,
+            expectedChangeCount: expectedChangeCount) else { return }
         pasteboard.clearContents()
         guard !saved.isEmpty else { return }
         pasteboard.writeObjects(saved)

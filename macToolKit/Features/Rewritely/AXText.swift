@@ -43,17 +43,9 @@ enum AXText {
             element, kAXSelectedTextRangeAttribute as CFString, axValue) == .success
     }
 
-    static func isValueSettable(_ element: AXUIElement) -> Bool {
-        var settable = DarwinBoolean(false)
-        let result = AXUIElementIsAttributeSettable(
-            element, kAXValueAttribute as CFString, &settable)
-        return result == .success && settable.boolValue
-    }
-
-    @discardableResult
-    static func setValue(_ string: String, on element: AXUIElement) -> Bool {
-        AXUIElementSetAttributeValue(
-            element, kAXValueAttribute as CFString, string as CFString) == .success
+    static func isFocused(_ element: AXUIElement) -> Bool {
+        guard let focused = focusedElement() else { return false }
+        return CFEqual(focused, element)
     }
 }
 
@@ -61,16 +53,26 @@ enum AXText {
 @MainActor
 enum KeySim {
     private static let keyDelay: Duration = .milliseconds(25)
+    /// Distinguishes our own keystrokes from user input in the listen-only
+    /// event tap. Rewritely uses this to cancel a pending model response when
+    /// the user edits, clicks, or copies while generation is in progress.
+    private static let eventMarker: Int64 = 0x4D_54_4B_52_57
+
+    static func isSynthetic(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.eventSourceUserData) == eventMarker
+    }
 
     static func press(_ keyCode: CGKeyCode, flags: CGEventFlags = []) async {
         let source = CGEventSource(stateID: .hidSystemState)
         if let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) {
             down.flags = flags
+            down.setIntegerValueField(.eventSourceUserData, value: eventMarker)
             down.post(tap: .cghidEventTap)
         }
         try? await Task.sleep(for: keyDelay)
         if let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) {
             up.flags = flags
+            up.setIntegerValueField(.eventSourceUserData, value: eventMarker)
             up.post(tap: .cghidEventTap)
         }
         try? await Task.sleep(for: keyDelay)
