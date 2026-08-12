@@ -12,7 +12,7 @@ struct MacToolKitApp: App {
                 .environmentObject(appState)
         } label: {
             Image(systemName: "rectangle.3.group")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 14, weight: .bold))
         }
         .menuBarExtraStyle(.menu)
     }
