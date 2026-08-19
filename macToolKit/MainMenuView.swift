@@ -23,6 +23,7 @@ struct MainMenuView: View {
             Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
             Toggle("Rewritely", isOn: $appState.rewritelyEnabled)
             Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
+            Toggle("Audio Priority", isOn: $appState.audioPriorityEnabled)
         }
         .disabled(!appState.hasCompletedOnboarding)
 

@@ -79,6 +79,7 @@ struct SettingsView: View {
                 case .scrolling: ScrollingPane()
                 case .windowSwitcher: WindowSwitcherPane()
                 case .peek: PeekPane()
+                case .audioPriority: AudioPriorityPane()
                 case .general: GeneralPane()
                 case .about: AboutPane()
                 }
@@ -1016,6 +1017,221 @@ private struct PeekPane: View {
                 .frame(width: 250)
             }
         }
+    }
+}
+
+// MARK: - Audio Priority
+
+private struct AudioPriorityPane: View {
+    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var controller = AppState.shared.audioPriority
+
+    // The pane has to stay live while the feature is off, when no device
+    // listener is registered — and it is also how the "Active" chip tracks a
+    // manual change, since we deliberately never watch the default device.
+    private let timer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HeroCard(tab: .audioPriority) {
+            StatusColumn(title: "Status", isOn: appState.audioPriorityEnabled) {
+                appState.audioPriorityEnabled.toggle()
+            }
+        }
+
+        Text("Rank the devices you care about. When one is plugged in or removed, macToolKit picks the highest-ranked device that's actually there. Choosing a different device by hand is left alone until the ranking changes again.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+        ForEach(AudioDirection.allCases, id: \.self) { direction in
+            PriorityListSection(direction: direction,
+                                store: controller.store(for: direction),
+                                snapshot: controller.snapshot)
+        }
+
+        SectionHeader(title: "Options")
+
+        Card {
+            CardRow(title: "Also route alert sounds",
+                    caption: "Keeps beeps and volume feedback on the same device as everything else.") {
+                Toggle("", isOn: $controller.alertSounds)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+        }
+        .onReceive(timer) { _ in
+            controller.refreshSnapshot()
+        }
+    }
+}
+
+private struct PriorityListSection: View {
+    /// Two lines of text plus the row's own padding.
+    static let rowHeight: CGFloat = 46
+
+    let direction: AudioDirection
+    @ObservedObject var store: AudioPriorityStore
+    let snapshot: AudioSnapshot
+
+    private var available: [LiveAudioDevice] {
+        snapshot.devices(for: direction).filter { !store.contains(uid: $0.uid) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "\(direction.title) priority")
+
+            if store.entries.isEmpty {
+                Card {
+                    Text("No \(direction.title.lowercased()) devices ranked yet. Add one below and it will be selected whenever it's connected.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                // A List, not the usual Card + ForEach, purely for `.onMove`:
+                // it is the only reorder gesture on macOS backed by a real
+                // AppKit drag session. A SwiftUI `.draggable` row loses the
+                // mouse-down to this window, which is movable by its
+                // background. Scrolling is off and the height is computed, so
+                // it behaves as a static card inside the pane's own ScrollView.
+                List {
+                    ForEach(Array(store.entries.enumerated()), id: \.element.id) { index, entry in
+                        PriorityDeviceRow(
+                            entry: entry,
+                            rank: index + 1,
+                            direction: direction,
+                            store: store,
+                            connected: snapshot.devices.contains {
+                                $0.uid == entry.uid && $0.supports(direction)
+                            },
+                            active: snapshot.defaultUID(for: direction) == entry.uid)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 14,
+                                                      bottom: 5, trailing: 14))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(index == 0 ? .hidden : .visible, edges: .top)
+                    }
+                    .onMove { indices, destination in
+                        store.entries.move(fromOffsets: indices, toOffset: destination)
+                        // The row snapping into its new slot is exactly what
+                        // `.alignment` describes. `.drawCompleted` lands the
+                        // tick with the frame that shows the new order rather
+                        // than ahead of it. Force Touch trackpads only, and
+                        // the system suppresses it when the user's finger has
+                        // already left the trackpad - so it is a bonus, never
+                        // the thing that tells you the move worked.
+                        NSHapticFeedbackManager.defaultPerformer
+                            .perform(.alignment, performanceTime: .drawCompleted)
+                    }
+                }
+                .listStyle(.plain)
+                .scrollDisabled(true)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, Self.rowHeight)
+                .frame(height: Self.rowHeight * CGFloat(store.entries.count))
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(nsColor: .appCardBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color(nsColor: .separatorColor).opacity(0.4))
+                )
+            }
+
+            if !available.isEmpty {
+                SectionHeader(title: "Available \(direction.title.lowercased())s")
+
+                Card {
+                    ForEach(available) { device in
+                        HStack(spacing: 12) {
+                            IconTile(icon: device.transport.symbol(for: direction),
+                                     tint: SettingsTab.audioPriority.tint, side: 22)
+                            Text(device.name)
+                                .font(.callout.weight(.medium))
+                            Spacer(minLength: 12)
+                            Button {
+                                store.add(device)
+                            } label: {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(.tint)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Add to the \(direction.title.lowercased()) priority list")
+                        }
+                        if device.id != available.last?.id {
+                            RowDivider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct PriorityDeviceRow: View {
+    let entry: AudioDeviceRef
+    let rank: Int
+    let direction: AudioDirection
+    @ObservedObject var store: AudioPriorityStore
+    let connected: Bool
+    let active: Bool
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(rank)")
+                .font(.footnote.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 14, alignment: .trailing)
+
+            IconTile(icon: entry.transport.symbol(for: direction),
+                     tint: SettingsTab.audioPriority.tint, side: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name)
+                    .font(.callout.weight(.medium))
+                Text(entry.uid)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 12)
+
+            // Both states share the chip shape so the column reads as one
+            // status, rather than a pill next to a monospaced value badge.
+            if active {
+                StatusChip(isOn: true, label: ("Active", "Active"))
+            } else if !connected {
+                StatusChip(isOn: false, label: ("Connected", "Not connected"))
+            }
+
+            // Affordance only: the whole row is the drag source, so this
+            // marks the row as reorderable rather than handling the gesture.
+            Image(systemName: "line.3.horizontal")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(.tertiary)
+                .help("Drag to reorder")
+                .accessibilityLabel("Drag to reorder")
+
+            // Revealed on hover, but kept in the layout so the row doesn't
+            // reflow under the pointer. Hit testing follows the opacity, so
+            // there is no invisible target to remove a device by accident.
+            Button { store.remove(uid: entry.uid) } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Remove from the priority list")
+            .opacity(hovering ? 1 : 0)
+            .allowsHitTesting(hovering)
+        }
+        .opacity(connected ? 1 : 0.55)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 

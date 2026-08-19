@@ -1,6 +1,6 @@
 # macToolKit
 
-Menu bar toolkit for macOS 26+ (Apple Silicon). Five tools, individually
+Menu bar toolkit for macOS 26+ (Apple Silicon). Six tools, individually
 toggled from the menu bar icon (Peek is a Quick Look extension
 that macOS manages). General settings cover appearance (System/Light/Dark), an
 optional dock icon ("Show in Dock") and launch at login.
@@ -14,6 +14,7 @@ optional dock icon ("Show in Dock") and launch at login.
 | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
 | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
 | Peek — folder and zip Quick Look | none | Press Space on a folder or a `.zip` in Finder; browsable tree with sizes, sorting and depth preload |
+| Audio Priority | none | Rank outputs and inputs; the highest-ranked connected device becomes the default, manual picks respected |
 
 ## Screenshots
 
@@ -157,6 +158,12 @@ selects to the start of the field so text after the trigger is preserved.
 - Quick Look's window chrome (the close and full-screen buttons) belongs to the
   host process, not the extension — there is no API to hide it, so the header
   inset adapts instead.
+- Audio Priority listens to the *device list*, never to the default-device
+  property. Watching the default would snap back every manual pick made in
+  System Settings; a manual pick only loses when a ranked device is plugged in
+  or removed and the winner actually moves. Devices are remembered by HAL UID
+  (`AudioDeviceID` is ephemeral) and device-list events are debounced, since one
+  hardware change fires several.
 
 ## License
 

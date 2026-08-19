@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Seven-page welcome flow: a welcome overview, one how-to page per feature,
+/// Eight-page welcome flow: a welcome overview, one how-to page per feature,
 /// and a final permissions page. Nothing asks the system for access until
 /// the user reaches the last page and clicks a button there.
 struct OnboardingView: View {
     @State private var page = 0
 
-    private static let pageCount = 7
+    private static let pageCount = 8
     private var isLastPage: Bool { page == Self.pageCount - 1 }
 
     var body: some View {
@@ -65,6 +65,16 @@ struct OnboardingView: View {
                             "Press Space or Esc to close. Everything else keeps its normal Quick Look preview.",
                         ],
                         footnote: "Runs as a native Quick Look extension. Finder supplies the selected item directly, so no extra permission is required.")
+                case 6:
+                    FeaturePage(
+                        tab: .audioPriority,
+                        headline: "The right speakers and mic, without the trip to System Settings.",
+                        steps: [
+                            "Rank your outputs and inputs in Settings, best first.",
+                            "Plug one in and it takes over; unplug it and the next one down takes its place.",
+                            "Pick a different device by hand and it stays, until the ranking has something to say again.",
+                        ],
+                        footnote: "Reads the audio devices attached to your Mac. No permission is required.")
                 default:
                     SetupPage()
                 }
@@ -105,7 +115,7 @@ struct OnboardingView: View {
             .padding(.horizontal, 40)
             .padding(.bottom, 20)
         }
-        .frame(width: 460, height: 560)
+        .frame(width: 460, height: 620)
     }
 }
 
@@ -132,18 +142,20 @@ private struct WelcomePage: View {
             VStack(spacing: 10) {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
-                    .frame(width: 84, height: 84)
+                    .frame(width: 68, height: 68)
                 Text("Welcome to macToolKit")
                     .font(.title.weight(.semibold))
-                Text("Five small tools for your Mac. Here's the quick tour.")
+                Text("Six small tools for your Mac. Here's the quick tour.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 30)
-            .padding(.bottom, 24)
+            .padding(.top, 18)
+            .padding(.bottom, 16)
 
-            VStack(alignment: .leading, spacing: 20) {
+            // Six rows have to clear the page dots and the Continue button in a
+            // fixed-height window, so this page runs tighter than the others.
+            VStack(alignment: .leading, spacing: 12) {
                 FeatureRow(tab: .display,
                            title: "Color temperature",
                            detail: "Warms the display in the evening so it's easier on the eyes.")
@@ -159,6 +171,9 @@ private struct WelcomePage: View {
                 FeatureRow(tab: .peek,
                            title: "Peek",
                            detail: "Press Space on a folder or a .zip in Finder to browse what is inside.")
+                FeatureRow(tab: .audioPriority,
+                           title: "Audio Priority",
+                           detail: "Rank your speakers and microphones so the best one plugged in is the default.")
             }
             .padding(.horizontal, 44)
         }
