@@ -28,6 +28,14 @@ struct MainMenuView: View {
 
         Divider()
 
+        // A background check found this one; the menu is where the badge on
+        // the menu bar icon leads. Clicking it opens Sparkle's update alert.
+        if let version = updater.pendingUpdateVersion {
+            Button("Update to \(version)…") {
+                updater.checkForUpdates()
+            }
+        }
+
         Button("Check for Updates…") {
             updater.checkForUpdates()
         }

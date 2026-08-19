@@ -5,14 +5,45 @@ import SwiftUI
 struct MacToolKitApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ObservedObject private var appState = AppState.shared
+    @ObservedObject private var updater = UpdaterManager.shared
+
+    /// The menu bar glyph, optionally carrying the dot that says a background
+    /// update is waiting. Drawn into a canvas with room for the dot so the
+    /// menu bar clips neither it nor the symbol's outer strokes.
+    private static func menuBarIcon(badged: Bool) -> NSImage {
+        let symbol = NSImage(systemSymbolName: "rectangle.3.group",
+                             accessibilityDescription: "macToolKit")?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .bold))
+            ?? NSImage()
+        let dot: CGFloat = 4
+        let size = NSSize(width: symbol.size.width + dot,
+                          height: symbol.size.height + dot)
+        let image = NSImage(size: size, flipped: false) { _ in
+            symbol.draw(at: NSPoint(x: 0, y: dot / 2),
+                        from: .zero, operation: .sourceOver, fraction: 1)
+            if badged {
+                // Template images keep only alpha, so the fill colour is
+                // irrelevant - the menu bar tints it for light and dark.
+                NSColor.black.setFill()
+                NSBezierPath(ovalIn: NSRect(x: size.width - dot,
+                                            y: size.height - dot,
+                                            width: dot, height: dot)).fill()
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 
     var body: some Scene {
         MenuBarExtra {
             MainMenuView()
                 .environmentObject(appState)
         } label: {
-            Image(systemName: "rectangle.3.group")
-                .font(.system(size: 14, weight: .bold))
+            // MenuBarExtra's label only renders its image content - overlays
+            // drawn on top of it are dropped - so the update badge is composed
+            // into the image itself.
+            Image(nsImage: Self.menuBarIcon(badged: updater.pendingUpdateVersion != nil))
         }
         .menuBarExtraStyle(.menu)
     }
