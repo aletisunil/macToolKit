@@ -1359,7 +1359,7 @@ private struct AboutPane: View {
                 .padding(.top, 22)
 
             AboutSection("Tools") {
-                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher · Peek")
+                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher · Peek · Audio Priority")
                     .font(.footnote)
             }
 
