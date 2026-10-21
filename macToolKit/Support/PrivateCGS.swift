@@ -1,7 +1,8 @@
 import AppKit
 
-/// Quarantine file for the private CoreGraphics Server (SkyLight) APIs the
-/// switcher uses to see windows on other Spaces and to number Space badges.
+/// Quarantine file for the private CoreGraphics Server (SkyLight) APIs: the
+/// switcher uses them to see windows on other Spaces and to number Space
+/// badges, the pointer features to hit-test windows.
 /// Every symbol is resolved with `dlsym` into an optional — if Apple removes
 /// or renames one, everything here degrades silently to "current space only"
 /// instead of failing to link. Safe for a non-sandboxed Developer ID app.
@@ -22,6 +23,10 @@ enum PrivateCGS {
         @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UnsafeMutablePointer<UInt8>) -> CGError
     private typealias SetCurrentSpaceFn =
         @convention(c) (ConnectionID, CFString, SpaceID) -> Void
+    private typealias FindWindowAndOwnerFn =
+        @convention(c) (ConnectionID, Int32, Int32, Int32,
+                        UnsafeMutablePointer<CGPoint>, UnsafeMutablePointer<CGPoint>,
+                        UnsafeMutablePointer<CGWindowID>, UnsafeMutablePointer<ConnectionID>) -> CGError
 
     private static func symbol<T>(_ name: String, as type: T.Type) -> T? {
         guard let address = dlsym(dlopen(nil, RTLD_LAZY), name) else { return nil }
@@ -43,6 +48,8 @@ enum PrivateCGS {
             ?? symbol("_SLPSPostEventRecordTo", as: PostEventRecordToFn.self)
     private static let setCurrentSpace =
         symbol("CGSManagedDisplaySetCurrentSpace", as: SetCurrentSpaceFn.self)
+    private static let findWindowAndOwner =
+        symbol("SLSFindWindowAndOwner", as: FindWindowAndOwnerFn.self)
 
     /// All symbols resolved — other-space windows and space badges work.
     static var available: Bool {
@@ -146,6 +153,24 @@ enum PrivateCGS {
         bytes[0x08] = 0x02 // left mouse up
         let up = postEventRecordTo(&psn, &bytes)
         return down == .success && up == .success
+    }
+
+    /// The window the window server would deliver a click at `point` to
+    /// (global coordinates, top-left origin), honouring event shapes - so
+    /// the Dock's transparent screen-sized window doesn't count except over
+    /// the Dock itself. A thread-safe C call, cheap enough for every click.
+    /// nil when unavailable or when nothing is there. Same call yabai makes.
+    static func windowID(at point: CGPoint) -> CGWindowID? {
+        guard let mainConnection, let findWindowAndOwner else { return nil }
+        var screenPoint = point
+        var windowPoint = CGPoint.zero
+        var windowID: CGWindowID = 0
+        var owner: ConnectionID = 0
+        guard findWindowAndOwner(mainConnection(), 0, 1, 0, &screenPoint, &windowPoint,
+                                 &windowID, &owner) == .success,
+              windowID != 0
+        else { return nil }
+        return windowID
     }
 
     /// Every space a window is on — more than one for sticky

@@ -38,7 +38,7 @@ struct SwitcherTapConfig: Sendable {
 /// state stays consistent system-wide. A ⌘Tab slot swallows the chord at
 /// `.headInsertEventTap` before the Dock's switcher sees it.
 ///
-/// Same threading model as `ScrollTap`: the tap lives on a dedicated thread
+/// Same threading model as `EventTap`: the tap lives on a dedicated thread
 /// with its own run loop, a watchdog re-enables it if macOS disables it, and
 /// the callback does near-zero work. Requires Accessibility permission.
 @MainActor

@@ -1,12 +1,13 @@
 import SwiftUI
+import Combine
 
-/// Eight-page welcome flow: a welcome overview, one how-to page per feature,
-/// and a final permissions page. Nothing asks the system for access until
+/// Nine-page welcome flow: a welcome overview, one how-to page per Settings
+/// pane (in sidebar order), and a final permissions page. Nothing asks the system for access until
 /// the user reaches the last page and clicks a button there.
 struct OnboardingView: View {
     @State private var page = 0
 
-    private static let pageCount = 8
+    private static let pageCount = 9
     private var isLastPage: Bool { page == Self.pageCount - 1 }
 
     var body: some View {
@@ -17,55 +18,65 @@ struct OnboardingView: View {
                     WelcomePage()
                 case 1:
                     FeaturePage(
+                        tab: .windowSwitcher,
+                        headline: "Switch between windows, not just apps.",
+                        steps: [
+                            "Hold ⌥ and press Tab - every window appears with a live preview.",
+                            "Keep pressing Tab to cycle - hold ⇧ to go backwards. Release ⌥ to switch.",
+                            "Make it your Cmd-Tab replacement and add more shortcuts in Settings.",
+                        ],
+                        footnote: "Uses Accessibility access for the shortcut - granted at the last step. Previews need Screen Recording, granted later from Settings.")
+                case 2:
+                    FeaturePage(
+                        tab: .windowBehavior,
+                        headline: "Windows that close, fill the screen and take focus the way you expect.",
+                        steps: [
+                            "**Quit on Close** - close an app's last window and the app quits too.",
+                            "**Maximize Windows** - the green button fills the screen. Click it again to restore.",
+                            "**Focus Follows Mouse** - rest the pointer on a window to bring it forward.",
+                        ],
+                        footnote: "Each is off until you turn it on from the menu bar. They use Accessibility access - granted at the last step.")
+                case 3:
+                    FeaturePage(
+                        tab: .mouse,
+                        headline: "Scroll the way you like on each device, and put the side buttons to work.",
+                        steps: [
+                            "**Scroll Reverser** - flip the trackpad, a mouse wheel, or both.",
+                            "Each keeps its own direction - natural on the trackpad, classic on the wheel.",
+                            "**Side Buttons** - mouse buttons 4 and 5 go back and forward in Finder, Safari and more.",
+                        ],
+                        footnote: "Uses Accessibility access to see scroll and button events - granted at the last step.")
+                case 4:
+                    FeaturePage(
+                        tab: .rewritely,
+                        headline: "Rewrite text in place with Apple Intelligence.",
+                        steps: [
+                            "Type anywhere - an email, a chat, a document.",
+                            "End with a trigger word like ;;fix.",
+                            "The text is rewritten right where it is. Add your own triggers in Settings.",
+                        ],
+                        footnote: "Uses Accessibility access to read and replace the text - granted at the last step.")
+                case 5:
+                    FeaturePage(
+                        tab: .finder,
+                        headline: "Look inside folders and archives, and move files with cut and paste.",
+                        steps: [
+                            "**Peek** - select a folder or a .zip and press Space to browse what's inside.",
+                            "Expand subfolders, sort by any column, double-click to open. Space or Esc closes it.",
+                            "**Cut & Paste** - press ⌘X on files, then ⌘V in another folder to move them.",
+                        ],
+                        footnote: "Peek is a Quick Look extension and needs no permission. Cut & Paste uses Accessibility access - granted at the last step.")
+                case 6:
+                    FeaturePage(
                         tab: .display,
                         headline: "Warms the display in the evening so it's easier on the eyes.",
                         steps: [
                             "Turn it on from the macToolKit icon in the menu bar.",
                             "Drag the slider for a fixed warmth, or pick Automatic to follow sunset and sunrise.",
-                            "Automatic mode can use your location for exact sun times — macOS asks only if you choose it.",
+                            "Automatic mode can use your location for exact sun times - macOS asks only if you choose it.",
                         ],
                         footnote: "No permissions needed for manual mode.")
-                case 2:
-                    FeaturePage(
-                        tab: .rewritely,
-                        headline: "Rewrite text in place with Apple Intelligence.",
-                        steps: [
-                            "Type anywhere — an email, a chat, a document.",
-                            "End with a trigger word like ;;fix.",
-                            "The text is rewritten right where it is. Add your own triggers in Settings.",
-                        ],
-                        footnote: "Uses Accessibility access to read and replace the text — granted at the last step.")
-                case 3:
-                    FeaturePage(
-                        tab: .scrolling,
-                        headline: "Flip scroll direction per device.",
-                        steps: [
-                            "Turn it on from the macToolKit icon in the menu bar.",
-                            "Choose what to flip: the trackpad and Magic Mouse, a mouse wheel, or both.",
-                            "Each keeps its own direction — natural on the trackpad, classic on the wheel.",
-                        ],
-                        footnote: "Uses Accessibility access to see scroll events — granted at the last step.")
-                case 4:
-                    FeaturePage(
-                        tab: .windowSwitcher,
-                        headline: "Switch between windows, not just apps.",
-                        steps: [
-                            "Hold ⌥ and press Tab — every window appears with a live preview.",
-                            "Keep pressing Tab to cycle — hold ⇧ to go backwards. Release ⌥ to switch.",
-                            "Make it your Cmd-Tab replacement and add more shortcuts in Settings.",
-                        ],
-                        footnote: "Uses Accessibility access for the shortcut — granted at the last step. Previews need Screen Recording, granted later from Settings.")
-                case 5:
-                    FeaturePage(
-                        tab: .peek,
-                        headline: "Quick Look that actually shows what is inside.",
-                        steps: [
-                            "Select a folder or a .zip in Finder or on the Desktop and press Space.",
-                            "Browse the contents - expand subfolders, sort by any column, double-click to open.",
-                            "Press Space or Esc to close. Everything else keeps its normal Quick Look preview.",
-                        ],
-                        footnote: "Runs as a native Quick Look extension. Finder supplies the selected item directly, so no extra permission is required.")
-                case 6:
+                case 7:
                     FeaturePage(
                         tab: .audioPriority,
                         headline: "The right speakers and mic, without the trip to System Settings.",
@@ -145,7 +156,7 @@ private struct WelcomePage: View {
                     .frame(width: 68, height: 68)
                 Text("Welcome to macToolKit")
                     .font(.title.weight(.semibold))
-                Text("Six small tools for your Mac. Here's the quick tour.")
+                Text("Eleven small tools for your Mac. Here's the quick tour.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -153,27 +164,24 @@ private struct WelcomePage: View {
             .padding(.top, 18)
             .padding(.bottom, 16)
 
-            // Six rows have to clear the page dots and the Continue button in a
-            // fixed-height window, so this page runs tighter than the others.
-            VStack(alignment: .leading, spacing: 12) {
-                FeatureRow(tab: .display,
-                           title: "Color temperature",
-                           detail: "Warms the display in the evening so it's easier on the eyes.")
-                FeatureRow(tab: .rewritely,
-                           title: "Rewritely",
-                           detail: "End any text with a trigger word and Apple Intelligence rewrites it in place.")
-                FeatureRow(tab: .scrolling,
-                           title: "Scroll Reverser",
-                           detail: "Flip scroll direction independently for the trackpad and a mouse wheel.")
+            // One row per Settings pane. Seven rows have to clear the page
+            // dots and the Continue button in a fixed-height window, so each
+            // detail is a single line.
+            VStack(alignment: .leading, spacing: 10) {
                 FeatureRow(tab: .windowSwitcher,
-                           title: "Window Switcher",
-                           detail: "Hold ⌥ and press Tab to switch between windows with live previews.")
-                FeatureRow(tab: .peek,
-                           title: "Peek",
-                           detail: "Press Space on a folder or a .zip in Finder to browse what is inside.")
+                           detail: "Hold ⌥ and press Tab to switch between windows.")
+                FeatureRow(tab: .windowBehavior,
+                           detail: "Quit on close, maximize, focus follows mouse.")
+                FeatureRow(tab: .mouse,
+                           detail: "Scroll direction per device, and side buttons.")
+                FeatureRow(tab: .rewritely,
+                           detail: "End text with a trigger word to rewrite it.")
+                FeatureRow(tab: .finder,
+                           detail: "Peek into folders and zips, cut and paste files.")
+                FeatureRow(tab: .display,
+                           detail: "Warms the display in the evening.")
                 FeatureRow(tab: .audioPriority,
-                           title: "Audio Priority",
-                           detail: "Rank your speakers and microphones so the best one plugged in is the default.")
+                           detail: "The best speakers and mic plugged in win.")
             }
             .padding(.horizontal, 44)
         }
@@ -182,25 +190,24 @@ private struct WelcomePage: View {
 
 private struct FeatureRow: View {
     let tab: SettingsTab
-    let title: String
     let detail: String
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .center, spacing: 14) {
             IconTile(icon: tab.icon, tint: tab.tint, side: 30)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(tab.title)
                     .font(.body.weight(.semibold))
                 Text(detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
             }
         }
     }
 }
 
-// MARK: - Pages 2–4: one feature each
+// MARK: - Pages 2–8: one Settings pane each
 
 private struct FeaturePage: View {
     let tab: SettingsTab
@@ -234,7 +241,8 @@ private struct FeaturePage: View {
                             .frame(width: 26, height: 26)
                             .overlay(Circle().strokeBorder(.tertiary))
                             .frame(width: 30)
-                        Text(step)
+                        // Markdown, so a step can name its feature in bold.
+                        Text(LocalizedStringKey(step))
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 3)
@@ -257,7 +265,7 @@ private struct FeaturePage: View {
     }
 }
 
-// MARK: - Page 5: permissions
+// MARK: - Last page: permissions
 
 private struct SetupPage: View {
     @EnvironmentObject private var appState: AppState
@@ -282,7 +290,7 @@ private struct SetupPage: View {
                 SetupRow(
                     step: "1",
                     title: "Grant Accessibility access",
-                    detail: "Used by Scroll Reverser, Rewritely and the Window Switcher to read input events, replace text and control windows. Peek works through Quick Look and needs no permission.",
+                    detail: "Used by the window, mouse and keyboard tools and by Cut & Paste, to see input events, replace text and control windows. Peek, Color Temperature and Audio Priority need no permission.",
                     done: accessibilityGranted, showsStatus: true
                 ) {
                     Button("Open Accessibility Settings…") {

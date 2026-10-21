@@ -125,7 +125,7 @@ final class RewritelyController: ObservableObject {
     /// only fires if the disable notification is actually delivered, and this
     /// tap's source lives on the main run loop, so a stalled main thread is
     /// exactly when the notification is most likely to be missed. Poll as a
-    /// backstop — same watchdog ScrollTap and SwitcherTap run — and keep
+    /// backstop - same watchdog EventTap and SwitcherTap run - and keep
     /// `tapActive` honest so the settings pane stops claiming it is running.
     private func startWatchdog() {
         guard watchdog == nil else { return }
@@ -240,13 +240,13 @@ final class RewritelyController: ObservableObject {
             return
         }
 
-        RewriteHUD.shared.show("Rewriting…")
+        PointerHUD.shared.show("Rewriting…")
         do {
             let rewritten = try await engine.rewrite(before, using: trigger)
             guard interactionGeneration == generation,
                   AXText.isFocused(element),
                   AXText.value(of: element) == before + after else {
-                RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+                PointerHUD.shared.flash("Rewrite cancelled: text changed")
                 return
             }
 
@@ -258,7 +258,7 @@ final class RewritelyController: ObservableObject {
                 expectedChangeCount: changeCount,
                 interactionGeneration: generation)
         } catch {
-            RewriteHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
+            PointerHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
         }
     }
 
@@ -285,7 +285,7 @@ final class RewritelyController: ObservableObject {
               pasteboard.changeCount == copiedTextChangeCount else {
             restore(pasteboard, to: savedItems,
                     ifChangeCountIs: copiedTextChangeCount)
-            RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+            PointerHUD.shared.flash("Rewrite cancelled: text changed")
             return
         }
 
@@ -293,7 +293,7 @@ final class RewritelyController: ObservableObject {
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             restore(pasteboard, to: savedItems,
                     ifChangeCountIs: copiedTextChangeCount)
-            RewriteHUD.shared.flash("Rewritely: couldn't read the text field")
+            PointerHUD.shared.flash("Rewritely: couldn't read the text field")
             return
         }
 
@@ -301,14 +301,14 @@ final class RewritelyController: ObservableObject {
         // selected during model generation.
         await KeySim.press(124) // kVK_RightArrow collapses to selection end
 
-        RewriteHUD.shared.show("Rewriting…")
+        PointerHUD.shared.show("Rewriting…")
         do {
             let rewritten = try await engine.rewrite(text, using: trigger)
             guard interactionGeneration == generation,
                   pasteboard.changeCount == copiedTextChangeCount else {
                 restore(pasteboard, to: savedItems,
                         ifChangeCountIs: copiedTextChangeCount)
-                RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+                PointerHUD.shared.flash("Rewrite cancelled: text changed")
                 return
             }
 
@@ -319,7 +319,7 @@ final class RewritelyController: ObservableObject {
         } catch {
             restore(pasteboard, to: savedItems,
                     ifChangeCountIs: copiedTextChangeCount)
-            RewriteHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
+            PointerHUD.shared.flash("Rewrite failed: \(error.localizedDescription)")
         }
     }
 
@@ -345,7 +345,7 @@ final class RewritelyController: ObservableObject {
         let pasteboard = NSPasteboard.general
         guard interactionGeneration == generation,
               pasteboard.changeCount == expectedChangeCount else {
-            RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+            PointerHUD.shared.flash("Rewrite cancelled: text changed")
             return
         }
 
@@ -354,7 +354,7 @@ final class RewritelyController: ObservableObject {
               pasteboard.changeCount == expectedChangeCount else {
             restore(pasteboard, to: savedClipboard,
                     ifChangeCountIs: expectedChangeCount)
-            RewriteHUD.shared.flash("Rewrite cancelled: text changed")
+            PointerHUD.shared.flash("Rewrite cancelled: text changed")
             return
         }
 
@@ -362,7 +362,7 @@ final class RewritelyController: ObservableObject {
         pasteboard.setString(rewritten, forType: .string)
         let replacementChangeCount = pasteboard.changeCount
         await KeySim.paste()
-        RewriteHUD.shared.hide()
+        PointerHUD.shared.hide()
 
         // Pasteboard reads are normally synchronous, but allow the target app
         // a short turn before restoring rich clipboard contents.

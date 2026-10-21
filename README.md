@@ -1,20 +1,26 @@
 # macToolKit
 
-Menu bar toolkit for macOS 26+ (Apple Silicon). Six tools, individually
+Menu bar toolkit for macOS 26+ (Apple Silicon). Eleven tools, individually
 toggled from the menu bar icon (Peek is a Quick Look extension
-that macOS manages). General settings cover appearance (System/Light/Dark), an
+that macOS manages). The menu and the Settings sidebar group them by what
+they act on: Windows, Mouse & Keyboard, Finder and System. General settings cover appearance (System/Light/Dark), an
 optional dock icon ("Show in Dock") and launch at login.
 
 ## Features
 
-| Feature | Permission | Notes |
-|---|---|---|
-| Color temperature (f.lux style) | none | Manual slider or sunset/sunrise auto mode |
-| Rewritely — trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
-| Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
-| Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
-| Peek — folder and zip Quick Look | none | Press Space on a folder or a `.zip` in Finder; browsable tree with sizes, sorting and depth preload |
-| Audio Priority | none | Rank outputs and inputs; the highest-ranked connected device becomes the default, manual picks respected |
+| Group | Feature | Permission | Notes |
+|---|---|---|---|
+| Windows | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
+| Windows | Quit on Close | Accessibility | Closing an app's last window quits it; minimized windows, other Spaces and tab groups count; keep-running list |
+| Windows | Maximize Windows | Accessibility | The green button fills the screen; click again to restore, ⌥-click for full screen |
+| Windows | Focus Follows Mouse | Accessibility | The window under the pointer takes focus after a short delay |
+| Mouse & Keyboard | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
+| Mouse & Keyboard | Side Buttons | Accessibility | Mouse buttons 4 and 5 go back and forward via a navigation swipe; per-app exceptions |
+| Mouse & Keyboard | Rewritely - trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
+| Finder | Peek - folder and zip Quick Look | none | Press Space on a folder or a `.zip` in Finder; browsable tree with sizes, sorting and depth preload |
+| Finder | Cut & Paste | Accessibility | ⌘X then ⌘V moves files in Finder |
+| System | Color temperature (f.lux style) | none | Manual slider or sunset/sunrise auto mode |
+| System | Audio Priority | none | Rank outputs and inputs; the highest-ranked connected device becomes the default, manual picks respected |
 
 ## Screenshots
 
@@ -101,6 +107,16 @@ Run the tests with:
 xcodebuild -project macToolKit.xcodeproj -scheme macToolKit -configuration Debug test
 ```
 
+The window, mouse and Finder features have an end-to-end run that posts real
+HID events through the Debug build and checks the outcome in Finder, Preview
+and the app's log (about two minutes; it moves the pointer, so leave the Mac
+alone). It needs a shell with Accessibility access and writes a PASS/FAIL
+report:
+
+```sh
+Scripts/e2e/input-features.sh
+```
+
 Signing uses the local "Apple Development" identity (team 5432YAY2UX, set in
 project.yml). The app and the Quick Look extension share a team-prefixed app
 group (`5432YAY2UX.com.sunilaleti.mactoolkit`, `APP_GROUP_ID` in project.yml)
@@ -121,11 +137,11 @@ certificate and a saved `notarytool` keychain profile named `macToolKit`).
 
 ## First-run setup
 
-1. **Accessibility** — needed for Scroll Reverser, Rewritely and Window
-   Switcher; grant from Settings → General when prompted.
-2. **Screen Recording** — optional, only for Window Switcher thumbnails;
+1. **Accessibility** - needed by every Windows and Mouse & Keyboard tool and
+   by Cut & Paste; grant from Settings → General when prompted.
+2. **Screen Recording** - optional, only for Window Switcher thumbnails;
    without it the switcher falls back to app-icon tiles.
-3. **Rewritely** — requires Apple Intelligence enabled in System Settings.
+3. **Rewritely** - requires Apple Intelligence enabled in System Settings.
 4. Auto color temperature can use Location (optional) or fixed times.
 
 ## How Rewritely works
@@ -143,10 +159,38 @@ selects to the start of the field so text after the trigger is preserved.
 - Gamma tables (`CGSetDisplayTransferByTable`) are reset by macOS on wake and
   display changes; `ColorTemperatureController` reapplies automatically and
   `CGDisplayRestoreColorSyncSettings()` restores on disable/quit.
-- Scroll Reverser and Window Switcher event taps run on dedicated threads
-  (Rewritely's listen-only tap stays on the main run loop). All three recover
-  from `tapDisabledByTimeout` both in the tap callback and from a 2 s watchdog,
-  since the disable notification itself can be missed.
+- Event taps run on dedicated threads. `Support/EventTap.swift` is the shared
+  lifecycle (thread, permission wait, 2 s watchdog) for Scroll Reverser, Side
+  Buttons, Maximize Windows, Focus Follows Mouse and Cut & Paste; the Window
+  Switcher has its own. Rewritely's listen-only tap stays on the main run
+  loop. All of them recover from `tapDisabledByTimeout` both in the callback
+  and from the watchdog, since the disable notification itself can be missed.
+- "Which window is under the pointer" is the window server's hit test
+  (`SLSFindWindowAndOwner`, `Support/WindowHitTest.swift`), not a walk of
+  `CGWindowListCopyWindowInfo`: the Dock keeps a transparent, screen-sized
+  window above every app that only takes clicks over the Dock itself.
+- Maximize Windows only hit-tests a click with Accessibility when it lands in
+  the traffic-light corner of a window. An Accessibility query into Chrome or
+  an Electron app switches on its whole accessibility tree, which is slow.
+  It presses the app's own Window > Fill and Return to Previous Size items
+  (found by their identifiers `_zoomFill:` / `_zoomUntile:`, which don't
+  change with the language), so the window animates like a system tile; it
+  only sets the frame itself for apps without them. It also closes the green
+  button's hover menu, which a swallowed click would otherwise leave open.
+  Messaging timeouts go on app elements only: one set on the system-wide
+  element becomes the default for every element in the process.
+- Side Buttons post a synthetic navigation swipe (gesture events with
+  undocumented fields) rather than ⌘[ / ⌘], which means "outdent" in editors.
+- Cut & Paste replaces ⌘X with a freshly built ⌘C and adds ⌥ to the next ⌘V
+  (Finder's "Move Item Here"). Editing a key event's code doesn't work - AppKit
+  matches shortcuts on the characters the event was created with - and key
+  events built off the main thread carry no characters until the main thread
+  has loaded the keyboard layout, so the ⌘C is built there. It is posted at
+  the HID level (marked, so its own tap lets it pass), behind any key still
+  in another app's tap, and the clipboard is only touched on the main thread.
+- Quit on Close watches each app with an AXObserver and quits only when no
+  window is left anywhere: minimized windows count, and windows on other
+  Spaces (invisible to Accessibility) come from the window list.
 - Peek settings live in the shared app group container, which is how the
   sandboxed Quick Look extension reads what the app writes. Values from older
   builds, which used `NSGlobalDomain`, are migrated on first launch and removed

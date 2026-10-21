@@ -2,26 +2,30 @@ import SwiftUI
 import Combine
 
 enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
-    // Feature panes (sidebar "FEATURES" section)
-    case display, rewritely, scrolling, windowSwitcher, peek, audioPriority
-    // App panes (sidebar "APP" section)
+    case windowSwitcher, windowBehavior, mouse, rewritely, finder, display, audioPriority
     case general, about
 
     var id: String { rawValue }
 
-    static var featureTabs: [SettingsTab] {
-        [.display, .rewritely, .scrolling, .windowSwitcher, .peek, .audioPriority]
-    }
-    static var appTabs: [SettingsTab] { [.general, .about] }
+    /// Sidebar layout: feature panes grouped by what they act on, then the
+    /// app's own panes.
+    static let sections: [(title: String, tabs: [SettingsTab])] = [
+        ("Windows", [.windowSwitcher, .windowBehavior]),
+        ("Mouse & Keyboard", [.mouse, .rewritely]),
+        ("Finder", [.finder]),
+        ("System", [.display, .audioPriority]),
+        ("App", [.general, .about]),
+    ]
 
     var title: String {
         switch self {
         case .general: "General"
         case .display: "Color Temperature"
         case .rewritely: "Rewritely"
-        case .scrolling: "Scroll Reverser"
+        case .mouse: "Mouse & Trackpad"
         case .windowSwitcher: "Window Switcher"
-        case .peek: "Peek"
+        case .windowBehavior: "Window Behavior"
+        case .finder: "Finder"
         case .audioPriority: "Audio Priority"
         case .about: "About"
         }
@@ -32,9 +36,10 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .display: "sun.max.fill"
         case .rewritely: "wand.and.stars"
-        case .scrolling: "computermouse.fill"
+        case .mouse: "computermouse.fill"
         case .windowSwitcher: "rectangle.stack"
-        case .peek: "text.magnifyingglass"
+        case .windowBehavior: "macwindow"
+        case .finder: "folder.fill"
         case .audioPriority: "headphones"
         case .about: "info.circle"
         }
@@ -46,9 +51,10 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .general: .gray
         case .display: .orange
         case .rewritely: .purple
-        case .scrolling: .teal
+        case .mouse: .teal
         case .windowSwitcher: .indigo
-        case .peek: .blue
+        case .windowBehavior: .green
+        case .finder: .blue
         case .audioPriority: Color(nsColor: .darkGray)
         case .about: .gray
         }
@@ -59,9 +65,10 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .general: "Appearance, dock icon and permissions."
         case .display: "Warms the display in the evening so it's easier on the eyes. Manual slider or fully automatic."
         case .rewritely: "Type a trigger word at the end of any text field and the text is rewritten in place."
-        case .scrolling: "Flip the scroll direction independently for the trackpad and a mouse wheel."
+        case .mouse: "Scroll direction per device, and side buttons that go back and forward."
         case .windowSwitcher: "Hold ⌥ and press Tab to switch between windows. Previews, minimized windows and all."
-        case .peek: "Press Space on a folder or a .zip in Finder to browse what's inside - Quick Look, but useful."
+        case .windowBehavior: "How windows close, fill the screen and take focus."
+        case .finder: "Look inside folders and archives, and move files with cut and paste."
         case .audioPriority: "Rank your speakers and microphones. The best one that's plugged in becomes the default."
         case .about: "Version and credits."
         }
@@ -91,6 +98,11 @@ final class AppState: ObservableObject {
     let rewritely = RewritelyController()
     let windowSwitcher = WindowSwitcherController()
     let audioPriority = AudioPriorityController()
+    let quitOnClose = QuitOnCloseController()
+    let maximizeWindows = MaximizeController()
+    let focusFollowsMouse = FocusFollowsMouseController()
+    let sideButtons = SideButtonsController()
+    let finderCutPaste = FinderCutPasteController()
 
     @Published var settingsTab: SettingsTab = .general
 
@@ -145,6 +157,41 @@ final class AppState: ObservableObject {
         }
     }
 
+    @Published var quitOnCloseEnabled: Bool {
+        didSet {
+            defaults.set(quitOnCloseEnabled, forKey: "quitOnCloseEnabled")
+            quitOnCloseEnabled ? quitOnClose.start() : quitOnClose.stop()
+        }
+    }
+
+    @Published var maximizeWindowsEnabled: Bool {
+        didSet {
+            defaults.set(maximizeWindowsEnabled, forKey: "maximizeWindowsEnabled")
+            maximizeWindowsEnabled ? maximizeWindows.start() : maximizeWindows.stop()
+        }
+    }
+
+    @Published var focusFollowsMouseEnabled: Bool {
+        didSet {
+            defaults.set(focusFollowsMouseEnabled, forKey: "focusFollowsMouseEnabled")
+            focusFollowsMouseEnabled ? focusFollowsMouse.start() : focusFollowsMouse.stop()
+        }
+    }
+
+    @Published var sideButtonsEnabled: Bool {
+        didSet {
+            defaults.set(sideButtonsEnabled, forKey: "sideButtonsEnabled")
+            sideButtonsEnabled ? sideButtons.start() : sideButtons.stop()
+        }
+    }
+
+    @Published var finderCutPasteEnabled: Bool {
+        didSet {
+            defaults.set(finderCutPasteEnabled, forKey: "finderCutPasteEnabled")
+            finderCutPasteEnabled ? finderCutPaste.start() : finderCutPaste.stop()
+        }
+    }
+
     @Published var appearanceMode: AppearanceMode {
         didSet {
             defaults.set(appearanceMode.rawValue, forKey: "appearanceMode")
@@ -173,6 +220,11 @@ final class AppState: ObservableObject {
         rewritelyEnabled = defaults.bool(forKey: "rewritelyEnabled")
         windowSwitcherEnabled = defaults.bool(forKey: "windowSwitcherEnabled")
         audioPriorityEnabled = defaults.bool(forKey: "audioPriorityEnabled")
+        quitOnCloseEnabled = defaults.bool(forKey: "quitOnCloseEnabled")
+        maximizeWindowsEnabled = defaults.bool(forKey: "maximizeWindowsEnabled")
+        focusFollowsMouseEnabled = defaults.bool(forKey: "focusFollowsMouseEnabled")
+        sideButtonsEnabled = defaults.bool(forKey: "sideButtonsEnabled")
+        finderCutPasteEnabled = defaults.bool(forKey: "finderCutPasteEnabled")
         appearanceMode = AppearanceMode(
             rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .system
     }
@@ -194,6 +246,11 @@ final class AppState: ObservableObject {
         if rewritelyEnabled { rewritely.start() }
         if windowSwitcherEnabled { windowSwitcher.start() }
         if audioPriorityEnabled { audioPriority.start() }
+        if quitOnCloseEnabled { quitOnClose.start() }
+        if maximizeWindowsEnabled { maximizeWindows.start() }
+        if focusFollowsMouseEnabled { focusFollowsMouse.start() }
+        if sideButtonsEnabled { sideButtons.start() }
+        if finderCutPasteEnabled { finderCutPaste.start() }
     }
 
     /// Tear down anything that mutates global system state. Called at quit.
@@ -203,5 +260,10 @@ final class AppState: ObservableObject {
         rewritely.stop()
         windowSwitcher.stop()
         audioPriority.stop()
+        quitOnClose.stop()
+        maximizeWindows.stop()
+        focusFollowsMouse.stop()
+        sideButtons.stop()
+        finderCutPaste.stop()
     }
 }

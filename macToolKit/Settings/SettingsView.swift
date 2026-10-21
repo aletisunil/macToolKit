@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import ServiceManagement
 
 // Layout modeled on Dictify: dark slim sidebar with uppercase section labels
@@ -40,18 +41,13 @@ struct SettingsView: View {
             .padding(.top, 36)
             .padding(.bottom, 14)
 
-            SidebarSectionLabel("Features")
-            ForEach(SettingsTab.featureTabs) { tab in
-                SidebarRow(tab: tab, selected: appState.settingsTab == tab) {
-                    appState.settingsTab = tab
-                }
-            }
-
-            SidebarSectionLabel("App")
-                .padding(.top, 16)
-            ForEach(SettingsTab.appTabs) { tab in
-                SidebarRow(tab: tab, selected: appState.settingsTab == tab) {
-                    appState.settingsTab = tab
+            ForEach(Array(SettingsTab.sections.enumerated()), id: \.offset) { index, section in
+                SidebarSectionLabel(section.title)
+                    .padding(.top, index == 0 ? 0 : 12)
+                ForEach(section.tabs) { tab in
+                    SidebarRow(tab: tab, selected: appState.settingsTab == tab) {
+                        appState.settingsTab = tab
+                    }
                 }
             }
 
@@ -76,9 +72,10 @@ struct SettingsView: View {
                 switch appState.settingsTab {
                 case .display: DisplayPane()
                 case .rewritely: RewritelyPane()
-                case .scrolling: ScrollingPane()
+                case .mouse: MousePane()
                 case .windowSwitcher: WindowSwitcherPane()
-                case .peek: PeekPane()
+                case .windowBehavior: WindowBehaviorPane()
+                case .finder: FinderPane()
                 case .audioPriority: AudioPriorityPane()
                 case .general: GeneralPane()
                 case .about: AboutPane()
@@ -251,32 +248,54 @@ struct StatusColumn: View {
 }
 
 /// Neutral status for integrations whose enablement is controlled by macOS.
-struct ManagedStatusColumn: View {
+struct ManagedChip: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gearshape.2")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text("Managed by macOS")
+                .font(.footnote.weight(.semibold))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.quaternary.opacity(0.5))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor))
+        )
+    }
+}
+
+/// One feature inside a pane that groups several: icon, name, what it does
+/// and its status chip, with the feature's own options below.
+struct FeatureCard<Trailing: View, Content: View>: View {
+    let icon: String
+    let tint: Color
     let title: String
+    let caption: String
+    @ViewBuilder var trailing: Trailing
+    @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 5) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .kerning(1.1)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                Image(systemName: "gearshape.2")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text("Managed by macOS")
-                    .font(.footnote.weight(.semibold))
+        Card {
+            HStack(spacing: 12) {
+                IconTile(icon: icon, tint: tint, side: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.callout.weight(.semibold))
+                    Text(caption)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                trailing
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.quaternary.opacity(0.5))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor))
-            )
+            content
         }
     }
 }
@@ -371,19 +390,69 @@ struct TapStatusCard: View {
     let tapActive: Bool
 
     var body: some View {
+        if isEnabled, !tapActive {
+            Card {
+                TapStatusWarning(featureName: featureName, isEnabled: isEnabled,
+                                 tapActive: tapActive)
+            }
+        }
+    }
+}
+
+/// The same explanation as a bare row, for use inside a `FeatureCard`.
+struct TapStatusWarning: View {
+    let featureName: String
+    let isEnabled: Bool
+    let tapActive: Bool
+
+    var body: some View {
         // The permission check only runs when there is already a problem to
         // explain, so it stays off the normal render path.
         if isEnabled, !tapActive {
-            Card {
-                if Permissions.accessibilityGranted {
-                    WarningRow(
-                        text: "\(featureName) has Accessibility access, but macOS didn't let it start. Retrying automatically. If it doesn't recover, quit and reopen macToolKit.",
-                        icon: "arrow.triangle.2.circlepath")
-                } else {
-                    WarningRow(
-                        text: "Waiting for Accessibility permission. \(featureName) starts automatically once it's granted.")
-                }
+            if Permissions.accessibilityGranted {
+                WarningRow(
+                    text: "\(featureName) has Accessibility access, but macOS didn't let it start. Retrying automatically. If it doesn't recover, quit and reopen macToolKit.",
+                    icon: "arrow.triangle.2.circlepath")
+            } else {
+                WarningRow(
+                    text: "Waiting for Accessibility permission. \(featureName) starts automatically once it's granted.")
             }
+        }
+    }
+}
+
+/// A user-edited list of apps with an "Add App…" button, for a feature's
+/// exceptions.
+struct AppListRows: View {
+    let title: String
+    let caption: String
+    let pickerMessage: String
+    @ObservedObject var store: AppListStore
+
+    var body: some View {
+        CardRow(title: title, caption: caption) {
+            Button("Add App…") {
+                AppListStore.chooseApps(message: pickerMessage).forEach(store.add)
+            }
+        }
+        ForEach(store.apps) { app in
+            HStack(spacing: 10) {
+                Image(nsImage: app.icon)
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                Text(app.name)
+                    .font(.callout)
+                Spacer(minLength: 12)
+                Button {
+                    store.remove(bundleID: app.bundleID)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove \(app.name)")
+            }
+            .padding(.leading, 2)
         }
     }
 }
@@ -552,54 +621,134 @@ private struct RewritelyPane: View {
     }
 }
 
-// MARK: - Scrolling
+// MARK: - Mouse & Trackpad
 
-private struct ScrollingPane: View {
+private struct MousePane: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var scroll = AppState.shared.scrollReverser
+    @ObservedObject private var sideButtons = AppState.shared.sideButtons
 
     var body: some View {
-        HeroCard(tab: .scrolling) {
-            StatusColumn(title: "Status", isOn: appState.scrollReverserEnabled) {
+        HeroCard(tab: .mouse) {
+            EmptyView()
+        }
+
+        FeatureCard(icon: "arrow.up.arrow.down", tint: .teal,
+                    title: "Scroll Reverser",
+                    caption: "Flip the scroll direction independently for the trackpad and a mouse wheel.") {
+            StatusChip(isOn: appState.scrollReverserEnabled) {
                 appState.scrollReverserEnabled.toggle()
             }
-        }
-
-        TapStatusCard(featureName: "Scroll Reverser",
-                      isEnabled: appState.scrollReverserEnabled,
-                      tapActive: scroll.tapActive)
-
-        Card {
+        } content: {
+            TapStatusWarning(featureName: "Scroll Reverser",
+                             isEnabled: appState.scrollReverserEnabled,
+                             tapActive: scroll.tapActive)
+            RowDivider()
             CardRow(title: "Trackpad and Magic Mouse",
                     caption: "Reverse two-finger and Magic Mouse scrolling.") {
-                Toggle("", isOn: $scroll.reverseTrackpad)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+                miniToggle($scroll.reverseTrackpad)
             }
-            RowDivider()
             CardRow(title: "Mouse wheel",
                     caption: "Reverse scrolling from a regular mouse wheel.") {
-                Toggle("", isOn: $scroll.reverseMouse)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+                miniToggle($scroll.reverseMouse)
+            }
+            RowDivider()
+            CardRow(title: "Vertical scrolling", caption: nil) {
+                miniToggle($scroll.reverseVertical)
+            }
+            CardRow(title: "Horizontal scrolling", caption: nil) {
+                miniToggle($scroll.reverseHorizontal)
             }
         }
 
-        Card {
-            CardRow(title: "Vertical scrolling", caption: nil) {
-                Toggle("", isOn: $scroll.reverseVertical)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+        FeatureCard(icon: "arrow.left.arrow.right", tint: .cyan,
+                    title: "Side Buttons",
+                    caption: "Mouse buttons 4 and 5 go back and forward - in Finder, Safari, Chrome and anywhere a trackpad swipe does.") {
+            StatusChip(isOn: appState.sideButtonsEnabled) {
+                appState.sideButtonsEnabled.toggle()
             }
+        } content: {
+            TapStatusWarning(featureName: "Side Buttons",
+                             isEnabled: appState.sideButtonsEnabled,
+                             tapActive: sideButtons.tapActive)
             RowDivider()
-            CardRow(title: "Horizontal scrolling", caption: nil) {
-                Toggle("", isOn: $scroll.reverseHorizontal)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+            AppListRows(title: "Leave these apps alone",
+                        caption: "They get the buttons unchanged - for apps with side-button actions of their own.",
+                        pickerMessage: "Choose apps that should get the side buttons unchanged.",
+                        store: sideButtons.exceptions)
+        }
+    }
+}
+
+private func miniToggle(_ binding: Binding<Bool>) -> some View {
+    Toggle("", isOn: binding)
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .labelsHidden()
+}
+
+// MARK: - Window Behavior
+
+private struct WindowBehaviorPane: View {
+    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var quitOnClose = AppState.shared.quitOnClose
+    @ObservedObject private var maximize = AppState.shared.maximizeWindows
+    @ObservedObject private var focus = AppState.shared.focusFollowsMouse
+
+    var body: some View {
+        HeroCard(tab: .windowBehavior) {
+            EmptyView()
+        }
+
+        FeatureCard(icon: "power", tint: .red,
+                    title: "Quit on Close",
+                    caption: "Closing an app's last window quits the app. Minimized windows and windows on other Spaces keep it running.") {
+            StatusChip(isOn: appState.quitOnCloseEnabled) {
+                appState.quitOnCloseEnabled.toggle()
+            }
+        } content: {
+            TapStatusWarning(featureName: "Quit on Close",
+                             isEnabled: appState.quitOnCloseEnabled,
+                             tapActive: quitOnClose.isActive)
+            RowDivider()
+            AppListRows(title: "Keep these apps running",
+                        caption: "They stay open with no windows, like on a regular Mac. Finder always does.",
+                        pickerMessage: "Choose apps that should keep running after their last window closes.",
+                        store: quitOnClose.exceptions)
+        }
+
+        FeatureCard(icon: "arrow.up.left.and.arrow.down.right", tint: .green,
+                    title: "Maximize Windows",
+                    caption: "The green button fills the screen instead of going full screen. Click it again to restore the window, or hold ⌥ to go full screen.") {
+            StatusChip(isOn: appState.maximizeWindowsEnabled) {
+                appState.maximizeWindowsEnabled.toggle()
+            }
+        } content: {
+            TapStatusWarning(featureName: "Maximize Windows",
+                             isEnabled: appState.maximizeWindowsEnabled,
+                             tapActive: maximize.tapActive)
+        }
+
+        FeatureCard(icon: "cursorarrow.rays", tint: .orange,
+                    title: "Focus Follows Mouse",
+                    caption: "The window under the pointer takes focus and comes to the front.") {
+            StatusChip(isOn: appState.focusFollowsMouseEnabled) {
+                appState.focusFollowsMouseEnabled.toggle()
+            }
+        } content: {
+            TapStatusWarning(featureName: "Focus Follows Mouse",
+                             isEnabled: appState.focusFollowsMouseEnabled,
+                             tapActive: focus.tapActive)
+            RowDivider()
+            CardRow(title: "Delay",
+                    caption: "How long the pointer rests on a window before it takes focus.") {
+                Picker("", selection: $focus.delay) {
+                    ForEach(FocusFollowsMouseController.delayChoices, id: \.self) { value in
+                        Text(value == 0 ? "Instantly" : "\(value.formatted()) s").tag(value)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 110)
             }
         }
     }
@@ -801,18 +950,8 @@ private struct WindowSwitcherPane: View {
     }
 
     private func addBlacklistApp() {
-        let panel = NSOpenPanel()
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.allowedContentTypes = [.application]
-        panel.allowsMultipleSelection = true
-        panel.message = "Choose apps to blacklist from the window switcher."
-        guard panel.runModal() == .OK else { return }
-        for url in panel.urls {
-            guard let bundle = Bundle(url: url),
-                  let bundleID = bundle.bundleIdentifier else { continue }
-            let name = FileManager.default.displayName(atPath: url.path)
-                .replacingOccurrences(of: ".app", with: "")
-            blacklist.add(bundleID: bundleID, name: name)
+        for app in AppListStore.chooseApps(message: "Choose apps to blacklist from the window switcher.") {
+            blacklist.add(bundleID: app.bundleID, name: app.name)
         }
     }
 }
@@ -891,13 +1030,6 @@ private struct ShortcutSlotCard: View {
             }
         }
     }
-
-    private func miniToggle(_ binding: Binding<Bool>) -> some View {
-        Toggle("", isOn: binding)
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .labelsHidden()
-    }
 }
 
 private struct BlacklistRow: View {
@@ -940,46 +1072,39 @@ private struct BlacklistRow: View {
     }
 }
 
-// MARK: - Peek
+// MARK: - Finder
 
-private struct PeekPane: View {
+private struct FinderPane: View {
+    @EnvironmentObject private var appState: AppState
+    @ObservedObject private var cutPaste = AppState.shared.finderCutPaste
     @StateObject private var preferences = PeekPreferences()
 
     var body: some View {
-        HeroCard(tab: .peek) {
-            ManagedStatusColumn(title: "Integration")
+        HeroCard(tab: .finder) {
+            EmptyView()
         }
 
-        Text("Select a folder or a .zip in Finder or on the Desktop and press Space. Finder opens Peek in its native Quick Look window; Space or Esc closes it. Everything else keeps its normal preview.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-
-        SectionHeader(title: "Quick Look Extension")
-
-        Card {
+        FeatureCard(icon: "text.magnifyingglass", tint: .blue,
+                    title: "Peek",
+                    caption: "Select a folder or a .zip and press Space to browse what's inside, in Finder's own Quick Look window. Everything else keeps its normal preview.") {
+            ManagedChip()
+        } content: {
+            RowDivider()
             CardRow(
-                title: "Folder and archive previews",
-                caption: "Installed with macToolKit. No Accessibility, Automation, Screen Recording or Full Disk Access is required."
+                title: "Quick Look extension",
+                caption: "Installed with macToolKit. Needs no permissions."
             ) {
                 Button("Extension Settings…") {
                     Permissions.openExtensionsSettings()
                 }
             }
-        }
-
-        SectionHeader(title: "Contents")
-
-        Card {
+            RowDivider()
             CardRow(
                 title: "Show hidden files",
                 caption: "Include items whose names begin with a dot and files marked hidden."
             ) {
-                Toggle("", isOn: $preferences.showHiddenFiles)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+                miniToggle($preferences.showHiddenFiles)
             }
-            RowDivider()
             CardRow(
                 title: "Depth level",
                 caption: "Automatically show nested folders up to this many levels."
@@ -991,21 +1116,12 @@ private struct PeekPane: View {
                 }
                 .fixedSize()
             }
-            RowDivider()
             CardRow(
                 title: "Show path bar",
                 caption: "Display the folder's location at the bottom of the preview."
             ) {
-                Toggle("", isOn: $preferences.showPathBar)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
+                miniToggle($preferences.showPathBar)
             }
-        }
-
-        SectionHeader(title: "Appearance")
-
-        Card {
             CardRow(title: "Icon size", caption: nil) {
                 Picker("", selection: $preferences.iconSize) {
                     ForEach(PeekIconSize.allCases) { size in
@@ -1016,6 +1132,18 @@ private struct PeekPane: View {
                 .labelsHidden()
                 .frame(width: 250)
             }
+        }
+
+        FeatureCard(icon: "scissors", tint: .indigo,
+                    title: "Cut & Paste",
+                    caption: "⌘X then ⌘V moves files instead of copying them. Renaming and search keep their normal text cut and paste.") {
+            StatusChip(isOn: appState.finderCutPasteEnabled) {
+                appState.finderCutPasteEnabled.toggle()
+            }
+        } content: {
+            TapStatusWarning(featureName: "Cut & Paste",
+                             isEnabled: appState.finderCutPasteEnabled,
+                             tapActive: cutPaste.tapActive)
         }
     }
 }
@@ -1313,7 +1441,7 @@ private struct GeneralPane: View {
 
         Card {
             CardRow(title: "Accessibility",
-                    caption: "Used by Scroll Reverser, Rewritely and Window Switcher. Color Temperature and Peek work without it.") {
+                    caption: "Used by every window, mouse and keyboard tool, and by Cut & Paste. Color Temperature, Peek and Audio Priority work without it.") {
                 if accessibilityGranted {
                     StatusChip(isOn: true, label: ("Granted", "Not granted"))
                 } else {
@@ -1359,8 +1487,13 @@ private struct AboutPane: View {
                 .padding(.top, 22)
 
             AboutSection("Tools") {
-                Text("Color Temperature · Rewritely · Scroll Reverser · Window Switcher · Peek · Audio Priority")
-                    .font(.footnote)
+                // One line per sidebar group, so no line breaks mid-list.
+                VStack(spacing: 3) {
+                    Text("Window Switcher · Quit on Close · Maximize Windows · Focus Follows Mouse")
+                    Text("Scroll Reverser · Side Buttons · Rewritely · Peek · Cut & Paste")
+                    Text("Color Temperature · Audio Priority")
+                }
+                .font(.footnote)
             }
 
             Spacer(minLength: 28)

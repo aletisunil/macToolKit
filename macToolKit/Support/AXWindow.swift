@@ -12,21 +12,30 @@ func _AXUIElementGetWindow(_ element: AXUIElement,
 /// messaging timeout so a hung app can't stall enumeration.
 enum AXWindow {
     /// Per-call timeout for AX round-trips to other processes.
-    private static let messagingTimeout: Float = 0.25
+    static let messagingTimeout: Float = 0.25
 
-    static func appElement(for pid: pid_t) -> AXUIElement {
+    /// The timeout belongs to this element only. Never set one on the
+    /// system-wide element: that one changes the default for every element
+    /// in the process, Rewritely's included.
+    static func appElement(for pid: pid_t, timeout: Float = messagingTimeout) -> AXUIElement {
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, messagingTimeout)
+        AXUIElementSetMessagingTimeout(app, timeout)
         return app
     }
 
     static func windows(of app: AXUIElement) -> [AXUIElement] {
+        windowsIfAnswered(of: app) ?? []
+    }
+
+    /// The app's windows, or nil when the app didn't answer. An app with no
+    /// windows at all answers with no value, which is an empty list.
+    static func windowsIfAnswered(of app: AXUIElement) -> [AXUIElement]? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-                  app, kAXWindowsAttribute as CFString, &value) == .success,
-              let list = value as? [AXUIElement]
-        else { return [] }
-        return list
+        switch AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) {
+        case .success: return value as? [AXUIElement] ?? []
+        case .noValue: return []
+        default: return nil
+        }
     }
 
     /// Live count of the app's switchable windows (standard windows and
@@ -51,13 +60,30 @@ enum AXWindow {
         return title
     }
 
-    private static func boolAttribute(_ window: AXUIElement, _ name: String) -> Bool {
+    static func stringAttribute(_ element: AXUIElement, _ name: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success
+        else { return nil }
+        return value as? String
+    }
+
+    static func boolAttribute(_ element: AXUIElement, _ name: String) -> Bool {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-                  window, name as CFString, &value) == .success,
+                  element, name as CFString, &value) == .success,
               let flag = value as? Bool
         else { return false }
         return flag
+    }
+
+    /// An attribute holding another element, such as the focused element or
+    /// the window a button belongs to.
+    static func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID()
+        else { return nil }
+        return (value as! AXUIElement)
     }
 
     static func isMinimized(_ window: AXUIElement) -> Bool {
@@ -71,11 +97,7 @@ enum AXWindow {
     /// Standard windows and dialogs belong in the switcher; palettes,
     /// popovers and system overlays don't.
     static func isSwitchable(_ window: AXUIElement) -> Bool {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-                  window, kAXSubroleAttribute as CFString, &value) == .success,
-              let subrole = value as? String
-        else { return false }
+        let subrole = stringAttribute(window, kAXSubroleAttribute)
         return subrole == kAXStandardWindowSubrole || subrole == kAXDialogSubrole
     }
 
@@ -111,6 +133,26 @@ enum AXWindow {
         AXUIElementSetAttributeValue(
             window, kAXMinimizedAttribute as CFString,
             minimized ? kCFBooleanTrue : kCFBooleanFalse)
+    }
+
+    /// Position, size, position: moving first lets the size fit a smaller
+    /// display, and the second move fixes the origin of a window that
+    /// couldn't take the full size. Accessibility coordinates: origin at the
+    /// top left of the primary screen, y down.
+    static func setFrame(_ window: AXUIElement, _ frame: CGRect) {
+        setPosition(window, frame.origin)
+        var size = frame.size
+        if let value = AXValueCreate(.cgSize, &size) {
+            AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value)
+        }
+        setPosition(window, frame.origin)
+    }
+
+    private static func setPosition(_ window: AXUIElement, _ origin: CGPoint) {
+        var origin = origin
+        if let value = AXValueCreate(.cgPoint, &origin) {
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+        }
     }
 
     static func setFullscreen(_ window: AXUIElement, _ fullscreen: Bool) {

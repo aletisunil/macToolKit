@@ -18,12 +18,27 @@ struct MainMenuView: View {
             Divider()
         }
 
+        // Same grouping as the Settings sidebar. Peek has no toggle here:
+        // macOS manages Quick Look extensions.
         Group {
-            Toggle("Color Temperature", isOn: $appState.colorTemperatureEnabled)
-            Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
-            Toggle("Rewritely", isOn: $appState.rewritelyEnabled)
-            Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
-            Toggle("Audio Priority", isOn: $appState.audioPriorityEnabled)
+            Section("Windows") {
+                Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
+                Toggle("Quit on Close", isOn: $appState.quitOnCloseEnabled)
+                Toggle("Maximize Windows", isOn: $appState.maximizeWindowsEnabled)
+                Toggle("Focus Follows Mouse", isOn: $appState.focusFollowsMouseEnabled)
+            }
+            Section("Mouse & Keyboard") {
+                Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
+                Toggle("Side Buttons", isOn: $appState.sideButtonsEnabled)
+                Toggle("Rewritely", isOn: $appState.rewritelyEnabled)
+            }
+            Section("Finder") {
+                Toggle("Cut & Paste", isOn: $appState.finderCutPasteEnabled)
+            }
+            Section("System") {
+                Toggle("Color Temperature", isOn: $appState.colorTemperatureEnabled)
+                Toggle("Audio Priority", isOn: $appState.audioPriorityEnabled)
+            }
         }
         .disabled(!appState.hasCompletedOnboarding)
 

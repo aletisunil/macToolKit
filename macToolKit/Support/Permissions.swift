@@ -13,6 +13,22 @@ enum Permissions {
         AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Checks every two seconds until Accessibility is granted, then runs
+    /// `granted` once and stops. Polls rather than calling
+    /// `requestAccessibility()` again, which would show the prompt each time.
+    /// Invalidate the returned timer to stop waiting.
+    static func whenAccessibilityGranted(_ granted: @escaping @MainActor () -> Void) -> Timer {
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { timer in
+            // Scheduled on the main run loop, so this is the main thread.
+            nonisolated(unsafe) let timer = timer
+            MainActor.assumeIsolated {
+                guard accessibilityGranted else { return }
+                timer.invalidate()
+                granted()
+            }
+        }
+    }
+
     /// Screen Recording is optional: without it the window switcher shows
     /// app icons instead of window previews.
     static var screenRecordingGranted: Bool {
