@@ -13,7 +13,7 @@ optional dock icon ("Show in Dock") and launch at login.
 | Windows | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
 | Windows | Quit on Close | Accessibility | Closing an app's last window quits it; minimized windows, other Spaces and tab groups count; keep-running list |
 | Windows | Maximize Windows | Accessibility | The green button fills the screen; click again to restore, ⌥-click for full screen |
-| Windows | Focus Follows Mouse | Accessibility | The window under the pointer takes focus after a short delay |
+| Windows | Focus Follows Mouse | Accessibility | Like Windows' "Activate a window by hovering over it": the window under the pointer, on any display, takes focus after a delay (0.5 s by default) and comes to the front - or, with "Bring window to front" off (like Windows 11), stays where it is |
 | Mouse & Keyboard | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
 | Mouse & Keyboard | Side Buttons | Accessibility | Mouse buttons 4 and 5 go back and forward via a navigation swipe; per-app exceptions |
 | Mouse & Keyboard | Rewritely - trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |

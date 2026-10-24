@@ -731,7 +731,7 @@ private struct WindowBehaviorPane: View {
 
         FeatureCard(icon: "cursorarrow.rays", tint: .orange,
                     title: "Focus Follows Mouse",
-                    caption: "The window under the pointer takes focus and comes to the front.") {
+                    caption: "The window under the pointer takes focus, like Windows\u{2019} \u{201C}Activate a window by hovering over it\u{201D}.") {
             StatusChip(isOn: appState.focusFollowsMouseEnabled) {
                 appState.focusFollowsMouseEnabled.toggle()
             }
@@ -749,6 +749,10 @@ private struct WindowBehaviorPane: View {
                 }
                 .labelsHidden()
                 .frame(width: 110)
+            }
+            CardRow(title: "Bring window to front",
+                    caption: "On, the window comes to the front as it takes focus. Off, it takes focus where it is, behind the others.") {
+                miniToggle($focus.bringToFront)
             }
         }
     }

@@ -179,6 +179,7 @@ private final class WindowMaximizer: @unchecked Sendable {
                 // The system's restore lands a point or so off, and the error
                 // adds up over repeated toggles. Settle on the exact frame.
                 if let saved {
+                    nonisolated(unsafe) let window = window
                     queue.asyncAfter(deadline: .now() + Self.animationTime) {
                         let landed = AXWindow.frame(of: window)
                         if landed != saved, Self.roughlyEqual(landed, saved) {
@@ -197,6 +198,7 @@ private final class WindowMaximizer: @unchecked Sendable {
         if let fill = menu?.fill, bringForward(window, id: id, pid: pid, of: app),
            AXUIElementPerformAction(fill, kAXPressAction as CFString) == .success {
             Self.log.log("maximized window \(id) (system)")
+            nonisolated(unsafe) let window = window
             queue.asyncAfter(deadline: .now() + Self.animationTime) { [self] in
                 // Unless the window was clicked again meanwhile.
                 if savedFrames[id] != nil { maximizedFrames[id] = AXWindow.frame(of: window) }
