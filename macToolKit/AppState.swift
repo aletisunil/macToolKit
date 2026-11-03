@@ -100,7 +100,6 @@ final class AppState: ObservableObject {
     let audioPriority = AudioPriorityController()
     let quitOnClose = QuitOnCloseController()
     let maximizeWindows = MaximizeController()
-    let focusFollowsMouse = FocusFollowsMouseController()
     let sideButtons = SideButtonsController()
     let finderCutPaste = FinderCutPasteController()
 
@@ -171,13 +170,6 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var focusFollowsMouseEnabled: Bool {
-        didSet {
-            defaults.set(focusFollowsMouseEnabled, forKey: "focusFollowsMouseEnabled")
-            focusFollowsMouseEnabled ? focusFollowsMouse.start() : focusFollowsMouse.stop()
-        }
-    }
-
     @Published var sideButtonsEnabled: Bool {
         didSet {
             defaults.set(sideButtonsEnabled, forKey: "sideButtonsEnabled")
@@ -222,7 +214,6 @@ final class AppState: ObservableObject {
         audioPriorityEnabled = defaults.bool(forKey: "audioPriorityEnabled")
         quitOnCloseEnabled = defaults.bool(forKey: "quitOnCloseEnabled")
         maximizeWindowsEnabled = defaults.bool(forKey: "maximizeWindowsEnabled")
-        focusFollowsMouseEnabled = defaults.bool(forKey: "focusFollowsMouseEnabled")
         sideButtonsEnabled = defaults.bool(forKey: "sideButtonsEnabled")
         finderCutPasteEnabled = defaults.bool(forKey: "finderCutPasteEnabled")
         appearanceMode = AppearanceMode(
@@ -248,7 +239,6 @@ final class AppState: ObservableObject {
         if audioPriorityEnabled { audioPriority.start() }
         if quitOnCloseEnabled { quitOnClose.start() }
         if maximizeWindowsEnabled { maximizeWindows.start() }
-        if focusFollowsMouseEnabled { focusFollowsMouse.start() }
         if sideButtonsEnabled { sideButtons.start() }
         if finderCutPasteEnabled { finderCutPaste.start() }
     }
@@ -262,7 +252,6 @@ final class AppState: ObservableObject {
         audioPriority.stop()
         quitOnClose.stop()
         maximizeWindows.stop()
-        focusFollowsMouse.stop()
         sideButtons.stop()
         finderCutPaste.stop()
     }

@@ -693,7 +693,6 @@ private struct WindowBehaviorPane: View {
     @EnvironmentObject private var appState: AppState
     @ObservedObject private var quitOnClose = AppState.shared.quitOnClose
     @ObservedObject private var maximize = AppState.shared.maximizeWindows
-    @ObservedObject private var focus = AppState.shared.focusFollowsMouse
 
     var body: some View {
         HeroCard(tab: .windowBehavior) {
@@ -727,33 +726,6 @@ private struct WindowBehaviorPane: View {
             TapStatusWarning(featureName: "Maximize Windows",
                              isEnabled: appState.maximizeWindowsEnabled,
                              tapActive: maximize.tapActive)
-        }
-
-        FeatureCard(icon: "cursorarrow.rays", tint: .orange,
-                    title: "Focus Follows Mouse",
-                    caption: "The window under the pointer takes focus, like Windows\u{2019} \u{201C}Activate a window by hovering over it\u{201D}.") {
-            StatusChip(isOn: appState.focusFollowsMouseEnabled) {
-                appState.focusFollowsMouseEnabled.toggle()
-            }
-        } content: {
-            TapStatusWarning(featureName: "Focus Follows Mouse",
-                             isEnabled: appState.focusFollowsMouseEnabled,
-                             tapActive: focus.tapActive)
-            RowDivider()
-            CardRow(title: "Delay",
-                    caption: "How long the pointer rests on a window before it takes focus.") {
-                Picker("", selection: $focus.delay) {
-                    ForEach(FocusFollowsMouseController.delayChoices, id: \.self) { value in
-                        Text(value == 0 ? "Instantly" : "\(value.formatted()) s").tag(value)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 110)
-            }
-            CardRow(title: "Bring window to front",
-                    caption: "On, the window comes to the front as it takes focus. Off, it takes focus where it is, behind the others.") {
-                miniToggle($focus.bringToFront)
-            }
         }
     }
 }
@@ -1493,7 +1465,7 @@ private struct AboutPane: View {
             AboutSection("Tools") {
                 // One line per sidebar group, so no line breaks mid-list.
                 VStack(spacing: 3) {
-                    Text("Window Switcher · Quit on Close · Maximize Windows · Focus Follows Mouse")
+                    Text("Window Switcher · Quit on Close · Maximize Windows")
                     Text("Scroll Reverser · Side Buttons · Rewritely · Peek · Cut & Paste")
                     Text("Color Temperature · Audio Priority")
                 }

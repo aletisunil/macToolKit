@@ -13,7 +13,6 @@ optional dock icon ("Show in Dock") and launch at login.
 | Windows | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
 | Windows | Quit on Close | Accessibility | Closing an app's last window quits it; minimized windows, other Spaces and tab groups count; keep-running list |
 | Windows | Maximize Windows | Accessibility | The green button fills the screen; click again to restore, ⌥-click for full screen |
-| Windows | Focus Follows Mouse | Accessibility | Like Windows' "Activate a window by hovering over it": the window under the pointer, on any display, takes focus after a delay (0.5 s by default) and comes to the front - or, with "Bring window to front" off (like Windows 11), stays where it is |
 | Mouse & Keyboard | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
 | Mouse & Keyboard | Side Buttons | Accessibility | Mouse buttons 4 and 5 go back and forward via a navigation swipe; per-app exceptions |
 | Mouse & Keyboard | Rewritely - trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
@@ -161,7 +160,7 @@ selects to the start of the field so text after the trigger is preserved.
   `CGDisplayRestoreColorSyncSettings()` restores on disable/quit.
 - Event taps run on dedicated threads. `Support/EventTap.swift` is the shared
   lifecycle (thread, permission wait, 2 s watchdog) for Scroll Reverser, Side
-  Buttons, Maximize Windows, Focus Follows Mouse and Cut & Paste; the Window
+  Buttons, Maximize Windows and Cut & Paste; the Window
   Switcher has its own. Rewritely's listen-only tap stays on the main run
   loop. All of them recover from `tapDisabledByTimeout` both in the callback
   and from the watchdog, since the disable notification itself can be missed.

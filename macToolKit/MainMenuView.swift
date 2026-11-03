@@ -25,7 +25,6 @@ struct MainMenuView: View {
                 Toggle("Window Switcher", isOn: $appState.windowSwitcherEnabled)
                 Toggle("Quit on Close", isOn: $appState.quitOnCloseEnabled)
                 Toggle("Maximize Windows", isOn: $appState.maximizeWindowsEnabled)
-                Toggle("Focus Follows Mouse", isOn: $appState.focusFollowsMouseEnabled)
             }
             Section("Mouse & Keyboard") {
                 Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)

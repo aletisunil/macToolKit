@@ -29,11 +29,10 @@ struct OnboardingView: View {
                 case 2:
                     FeaturePage(
                         tab: .windowBehavior,
-                        headline: "Windows that close, fill the screen and take focus the way you expect.",
+                        headline: "Windows that close and fill the screen the way you expect.",
                         steps: [
                             "**Quit on Close** - close an app's last window and the app quits too.",
                             "**Maximize Windows** - the green button fills the screen. Click it again to restore.",
-                            "**Focus Follows Mouse** - rest the pointer on a window to bring it forward.",
                         ],
                         footnote: "Each is off until you turn it on from the menu bar. They use Accessibility access - granted at the last step.")
                 case 3:
@@ -171,7 +170,7 @@ private struct WelcomePage: View {
                 FeatureRow(tab: .windowSwitcher,
                            detail: "Hold ⌥ and press Tab to switch between windows.")
                 FeatureRow(tab: .windowBehavior,
-                           detail: "Quit on close, maximize, focus follows mouse.")
+                           detail: "Quit on close and maximize.")
                 FeatureRow(tab: .mouse,
                            detail: "Scroll direction per device, and side buttons.")
                 FeatureRow(tab: .rewritely,

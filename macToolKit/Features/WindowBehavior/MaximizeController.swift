@@ -213,7 +213,7 @@ private final class WindowMaximizer: @unchecked Sendable {
     /// The tiling commands act on the active app's main window, so the
     /// clicked window has to be both. Activation can be turned down for a
     /// request from a background app like this one; the window server's own
-    /// front-process call is the fallback, as in Focus Follows Mouse.
+    /// front-process call is the fallback.
     /// Returns false when the app didn't come forward in time.
     private func bringForward(_ window: AXUIElement, id: CGWindowID, pid: pid_t,
                               of app: AXUIElement) -> Bool {

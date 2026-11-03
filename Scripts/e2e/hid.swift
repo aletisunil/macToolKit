@@ -8,9 +8,6 @@
 //   hid key <keycode> [cmd|opt|shift|ctrl ...]
 //   hid move <x> <y>                warp the pointer
 //   hid glide <x1> <y1> <x2> <y2>   real pointer motion in 20 steps
-//   hid hop <x1> <y1> <x2> <y2> <ms>
-//                                   move to x1,y1, then ms later to x2,y2
-//                                   and stop - a flick that ends fast
 //   hid keys <keycode>[+cmd]:d|u ...
 //                                   post key downs/ups in order, print the
 //                                   key events apps receive (e.g. "8d 0u 8u")
@@ -32,9 +29,6 @@
 //   hid front                       frontmost app's bundle id
 //   hid clipboard                   names of the files on the pasteboard
 //                                   ("-" when it holds no files)
-//   hid order <bundle-id> ...       titles of those apps' on-screen windows,
-//                                   front to back (e.g. "A left right")
-//   hid screen                      main screen's frame: x y w h
 //   hid visible                     main screen's visible frame: x y w h
 import AppKit
 import ApplicationServices
@@ -139,11 +133,6 @@ case "glide":
         post(.mouseMoved, at: CGPoint(x: x1 + (x2 - x1) * t, y: y1 + (y2 - y1) * t))
         usleep(10_000)
     }
-
-case "hop":
-    post(.mouseMoved, at: CGPoint(x: number(2), y: number(3)))
-    usleep(useconds_t(number(6) * 1000))
-    post(.mouseMoved, at: CGPoint(x: number(4), y: number(5)))
 
 case "keys":
     // Same listener as "scroll": a tail-appended session tap sees what apps
@@ -328,34 +317,6 @@ case "clipboard":
     let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self],
                                                 options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
     print(urls.isEmpty ? "-" : urls.map(\.lastPathComponent).sorted().joined(separator: " "))
-
-case "order":
-    // Window ids in stacking order need no Screen Recording grant; titles
-    // come from Accessibility, matched by window id.
-    var titles: [CGWindowID: String] = [:]
-    for bundleID in args.dropFirst(2) {
-        for app in NSRunningApplication.runningApplications(withBundleIdentifier: bundleID) {
-            let windows = attribute(AXUIElementCreateApplication(app.processIdentifier),
-                                    kAXWindowsAttribute) as? [AXUIElement] ?? []
-            for window in windows {
-                var id: CGWindowID = 0
-                if _AXUIElementGetWindow(window, &id) == .success {
-                    titles[id] = attribute(window, kAXTitleAttribute) as? String ?? "?"
-                }
-            }
-        }
-    }
-    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                          kCGNullWindowID) as? [[String: Any]] ?? []
-    print(list.compactMap { entry -> String? in
-        guard entry[kCGWindowLayer as String] as? Int == 0,
-              let id = entry[kCGWindowNumber as String] as? CGWindowID else { return nil }
-        return titles[id]
-    }.joined(separator: " "))
-
-case "screen":
-    guard let screen = NSScreen.screens.first else { fail("no screen") }
-    printRect(CGRect(origin: .zero, size: screen.frame.size))
 
 case "visible":
     guard let screen = NSScreen.screens.first else { fail("no screen") }

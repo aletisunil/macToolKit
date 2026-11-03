@@ -1,15 +1,14 @@
 #!/bin/zsh
 # End-to-end test for the input and window features: Quit on Close, Maximize
-# Windows, Focus Follows Mouse, Side Buttons, Finder Cut & Paste and Scroll
-# Reverser. Real HID events go through the Debug build's event taps; results
+# Windows, Side Buttons, Finder Cut & Paste and Scroll Reverser. Real HID events go through the Debug build's event taps; results
 # are read back from Finder, Preview, Accessibility and the app's own log.
 #
 #   Scripts/e2e/input-features.sh [output-dir]
 #
 # Needs: a Debug build (xcodebuild ... -configuration Debug build), Preview
 # not running, and a shell with Accessibility access (`hid trust`). It moves
-# the pointer and drives Finder and Preview for about two minutes, and adds a
-# virtual second display for a while - leave the Mac alone meanwhile. The Debug app's defaults are backed up and restored,
+# the pointer and drives Finder and Preview for about a minute - leave the Mac
+# alone meanwhile. The Debug app's defaults are backed up and restored,
 # and a running release macToolKit is quit for the run and relaunched after.
 #
 # Writes <output-dir>/report.md (one PASS/FAIL line per check plus the app's
@@ -33,8 +32,6 @@ pgrep -x Preview >/dev/null && { echo "Quit Preview first - the run opens, close
 HID=$WORK/hid
 swiftc -O "$ROOT/Scripts/e2e/hid.swift" -o "$HID" || exit 100
 [[ $($HID trust) == trusted ]] || { echo "This shell needs Accessibility access to post events."; exit 100; }
-VDISPLAY=$WORK/virtualdisplay
-clang -fobjc-arc -framework AppKit -framework CoreGraphics "$ROOT/Scripts/e2e/virtualdisplay.m" -o "$VDISPLAY" || exit 100
 
 # build_app <name> <source> <bundle-id>: a test app at $WORK/<name>.app.
 build_app() {
@@ -55,10 +52,6 @@ PLIST
 TESTAPP=$WORK/TestWindow.app
 TESTID=com.sunilaleti.e2e.testwindow
 build_app TestWindow testwindow.swift $TESTID
-# Two text windows that report the key window and what was typed into each.
-TYPEAPP=$WORK/TypeWindows.app
-TYPEID=com.sunilaleti.e2e.typewindows
-build_app TypeWindows typewindows.swift $TYPEID
 
 # MARK: Helpers
 
@@ -136,7 +129,6 @@ RELEASE_WAS_RUNNING=$(pgrep -f "/Applications/macToolKit.app/Contents/MacOS" >/d
 pkill -f "macToolKit Debug.app/Contents/MacOS" 2>/dev/null; sleep 0.5
 defaults export $DOMAIN "$WORK/defaults-backup.plist" 2>/dev/null || true
 
-VDISPLAY_PID=
 cleanup() {
   pkill -f "macToolKit Debug.app/Contents/MacOS" 2>/dev/null; sleep 0.5
   # The run's own Finder windows, by id - Finder can't close a filtered
@@ -145,8 +137,6 @@ cleanup() {
     -e "try" -e "if POSIX path of (target of Finder window id i as alias) starts with \"$WORK/\" then close Finder window id i" \
     -e 'end try' -e 'end repeat' -e 'end tell' 2>/dev/null
   osascript -e 'tell application "Preview" to quit' 2>/dev/null
-  pkill -x TypeWindows 2>/dev/null
-  [[ -n $VDISPLAY_PID ]] && kill $VDISPLAY_PID 2>/dev/null
   defaults delete $DOMAIN 2>/dev/null
   [[ -f $WORK/defaults-backup.plist ]] && defaults import $DOMAIN "$WORK/defaults-backup.plist"
   [[ $RELEASE_WAS_RUNNING == yes ]] && open -g /Applications/macToolKit.app
@@ -164,7 +154,6 @@ defaults write $DOMAIN hasCompletedOnboarding -bool true
 for key in quitOnCloseEnabled maximizeWindowsEnabled sideButtonsEnabled finderCutPasteEnabled scrollReverserEnabled; do
   defaults write $DOMAIN $key -bool true
 done
-defaults write $DOMAIN focusFollowsMouseEnabled -bool false
 defaults write $DOMAIN scrollReverseTrackpad -bool false
 defaults write $DOMAIN scrollReverseMouse -bool true
 defaults write $DOMAIN scrollReverseVertical -bool true
@@ -310,50 +299,19 @@ check "the rename was cancelled cleanly" "delta.txt epsilon.txt" "$(listing "$SR
 # come back up (keycodes: 0 = A, 7 = X, 8 = C).
 check "⌘X with a key released in between still releases its ⌘C" "0d 8d 0u 8u" "$($HID keys 0:d 7+cmd:d 0:u 7+cmd:u)"
 
-# MARK: Phase 2 - Focus Follows Mouse and the exception lists
+# MARK: Phase 2 - the exception lists
 
-defaults write $DOMAIN focusFollowsMouseEnabled -bool true
-# 0.4 s leaves room for the key-press check to land inside the delay.
-defaults write $DOMAIN focusFollowsMouseDelay -float 0.4
 defaults write $DOMAIN quitOnCloseExceptions -data $(json_apps com.apple.Preview Preview)
 defaults write $DOMAIN sideButtonsExceptions -data $(json_apps com.apple.finder Finder)
 launch_app
 
-section "Focus Follows Mouse"
+section "Exception lists"
 LEFT=$((VX + 360)); RIGHT=$((VX + 1060)); MID=$((VY + 260))
 preview_open "$WORK/images/one.png"
 osascript -e "tell application \"Preview\" to set bounds of front window to {$((VX + 40)), $((VY + 40)), $((VX + 680)), $((VY + 480))}" \
-  -e "tell application \"Finder\" to set bounds of front window to {$((VX + 740)), $((VY + 40)), $((VX + 1380)), $((VY + 480))}" \
-  -e 'tell application "Finder" to activate'
-$HID move $RIGHT $MID; sleep 0.8
-$HID glide $RIGHT $MID $LEFT $MID; sleep 1
-check "resting on Preview focuses it" com.apple.Preview "$(front)"
-$HID glide $LEFT $MID $RIGHT $MID; sleep 1
-check "resting on Finder focuses it" com.apple.finder "$(front)"
-# The last move lands inside the lookup throttle: only a lookup where the
-# pointer stopped sees Preview.
-$HID hop $((RIGHT - 10)) $MID $LEFT $MID 15; sleep 1
-check "a flick that stops on Preview right away still focuses it" com.apple.Preview "$(front)"
-$HID glide $LEFT $MID $RIGHT $MID; sleep 1
-$HID glide $RIGHT $MID $LEFT $MID; sleep 0.1
-check "focus waits out the delay" com.apple.finder "$(front)"
-sleep 1
-check "and moves once it is up" com.apple.Preview "$(front)"
-$HID glide $LEFT $MID $RIGHT $MID; $HID key 53; sleep 1
-check "a key press right after moving doesn't hold focus back (as on Windows)" com.apple.finder "$(front)"
-$HID glide $LEFT $MID $RIGHT $MID; sleep 1
-$HID glide $RIGHT 10 $LEFT 10; sleep 0.8
-check "gliding along the menu bar changes nothing" com.apple.finder "$(front)"
-$HID move $RIGHT $MID; sleep 0.5
-osascript -e 'tell application "System Events" to tell process "Finder" to click menu bar item "View" of menu bar 1' >/dev/null; sleep 0.5
-$HID glide $RIGHT $MID $LEFT $MID; sleep 0.8
-check "an open menu keeps focus where it is" com.apple.finder "$(front)"
-$HID key 53; sleep 0.5
-
-section "Exception lists"
+  -e "tell application \"Finder\" to set bounds of front window to {$((VX + 740)), $((VY + 40)), $((VX + 1380)), $((VY + 480))}" >/dev/null
 osascript -e 'tell application "Finder" to activate'; sleep 0.4; $HID move $RIGHT $MID; sleep 0.8
-# With Focus Follows Mouse on, the app in front is the one under the pointer.
-check "the pointer rests on Finder's window" com.apple.finder "$(front)"
+check "Finder's window is in front, under the pointer" com.apple.finder "$(front)"
 BEFORE=$(finder_path); $HID side back; sleep 0.9
 check "Finder on the side-button list gets the raw button (no navigation)" "$BEFORE" "$(finder_path)"
 # A side button held while the feature is switched off: its release is never
@@ -364,112 +322,6 @@ $HID move $RIGHT $MID; sleep 0.6
 check "after an off/on toggle mid-press, Finder still gets whole clicks" "3d 3g 3u" "$($HID buttons 3:d 3:g 3:u)"
 osascript -e 'tell application "Preview" to activate'; sleep 0.5; $HID key 13 cmd; sleep 1.5
 check "Preview on the keep-running list survives its last window" running "$(running Preview)"
-
-# MARK: Two displays
-
-section "Focus Follows Mouse - two displays"
-# Windows' case: a window on each display. Rest on the other display's window
-# and type - the text lands there. Both windows belong to one test app, so
-# focus has to move between windows, not just apps.
-two_displays() {
-"$VDISPLAY" 1920 1080 > "$WORK/display" 2> "$WORK/display.err" < /dev/null &
-VDISPLAY_PID=$!
-for i in {1..60}; do [[ -s $WORK/display ]] || ! kill -0 $VDISPLAY_PID 2>/dev/null && break; sleep 0.25; done
-read DX DY DW DH <<< "$(cat "$WORK/display")"
-# Without a display, every step below would run on garbage coordinates.
-if [[ -z $DH ]]; then
-  check "a virtual display comes online" online "$(tr '\n' ' ' < "$WORK/display.err")"
-  kill $VDISPLAY_PID 2>/dev/null; VDISPLAY_PID=
-  return
-fi
-check "a virtual display sits right of the main one" "$($HID screen | cut -d' ' -f3) 1920 1080" "$DX $DW $DH"
-mkdir -p "$WORK/typed"
-open -n "$TYPEAPP" --args "$WORK/typed" $((VX + 40)) $((VY + 40)) 660 460 $((DX + 200)) $((DY + 100)) 1000 600
-sleep 2
-LX=$((VX + 370)); LY=$((VY + 270)); RX=$((DX + 700)); RY=$((DY + 400))
-$HID move $LX $LY; sleep 1
-# The key window's title while the test app is in front, else the front app.
-key_window() { [[ $(front) == $TYPEID ]] && cat "$WORK/typed/key.txt" || front; }
-typed() { cat "$WORK/typed/$1.txt"; }
-check "the main display's window starts in front" left "$(key_window)"
-# The log is read from whole seconds: wait one out, so a focus during setup
-# (when the app launched without activating) isn't counted.
-sleep 1; SINCE=$(now)
-$HID glide $LX $LY $RX $RY; sleep 0.1
-check "the other display's window waits out the delay" left "$(key_window)"
-sleep 1
-check "resting on a window on the other display focuses it" right "$(key_window)"
-check "the window was focused where it is, not moved" yes "$(near "$($HID frame $TYPEID)" "$((DX + 200)) $((DY + 100)) 1000 600")"
-check "the window was focused by the app" 1 "$(logged "$SINCE" FocusFollowsMouse 'focused window')"
-$HID glide $RX $RY $LX $LY; sleep 1
-check "and back on the main display" left "$(key_window)"
-# Typing right after crossing: like Windows, keys go to the old window until
-# the delay is up, then to the window under the pointer (7 = X, 16 = Y).
-$HID glide $LX $LY $RX $RY; $HID key 7; sleep 1; $HID key 16; sleep 0.5
-check "a key typed within the delay still goes to the old window" x "$(typed left)"
-check "after the delay, typing goes to the other display's window" y "$(typed right)"
-# Crossing the main display's window quicker than the delay, back onto the
-# window that is already in front.
-$HID hop $LX $LY $RX $RY 150; sleep 1
-check "crossing a window quicker than the delay leaves focus alone" right "$(key_window)"
-osascript -e "tell application id \"$TYPEID\" to quit"; sleep 1
-kill $VDISPLAY_PID 2>/dev/null; VDISPLAY_PID=; sleep 2
-}
-two_displays
-
-# MARK: Bring window to front - both modes
-
-# overlap <on|off>: the test app's "left" window above its "right" one and
-# Finder's "A" above both, overlapping. Rest on each, type, read the stacking
-# order back: with "Bring window to front" on, what takes focus comes to the
-# front; off, focus moves and every window stays where it is.
-overlap() {
-  local mode=$1 dir=$WORK/typed-$1
-  section "Focus Follows Mouse - bring window to front $mode"
-  defaults write $DOMAIN focusFollowsMouseBringToFront -bool $([[ $mode == on ]] && echo true || echo false)
-  launch_app
-  local LX=$((VX + 200)) LY=$((VY + 200)) RX=$((VX + 820)) RY=$((VY + 680)) FX=$((VX + 1200)) FY=$((VY + 450))
-  stack() { $HID order com.apple.finder $TYPEID | tr ' ' '\n' | grep -xE 'A|left|right' | paste -sd' ' -; }
-  top() { stack | cut -d' ' -f1; }
-  key_window() { [[ $(front) == $TYPEID ]] && cat "$dir/key.txt" || front; }
-  mkdir -p "$dir"
-  osascript -e "tell application \"Finder\" to set target of front window to POSIX file \"$WORK/nav/A\"" \
-    -e "tell application \"Finder\" to set bounds of front window to {$((VX + 900)), $((VY + 300)), $((VX + 1400)), $((VY + 600))}"
-  open -n "$TYPEAPP" --args "$dir" $((VX + 40)) $((VY + 40)) 700 500 $((VX + 400)) $((VY + 250)) 700 500
-  sleep 2
-  $HID move $FX $FY; osascript -e 'tell application "Finder" to activate'; sleep 1
-  check "[$mode] Finder's window starts above both" "A left right" "$(stack)"
-  $HID glide $FX $FY $LX $LY; sleep 1
-  check "[$mode] resting on another app's window focuses it" "left" "$(key_window)"
-  if [[ $mode == on ]]; then
-    check "[$mode] and brings it to the front" left "$(top)"
-  else
-    check "[$mode] and leaves every window where it was" "A left right" "$(stack)"
-  fi
-  $HID glide $LX $LY $RX $RY; sleep 1
-  check "[$mode] resting on a covered window of the same app focuses it" right "$(key_window)"
-  if [[ $mode == on ]]; then
-    check "[$mode] and brings it to the front" right "$(top)"
-  else
-    check "[$mode] and it stays behind the others" "A left right" "$(stack)"
-  fi
-  $HID key 6; sleep 0.5
-  check "[$mode] typing goes to the focused window" z "$(cat "$dir/right.txt")"
-  if [[ $mode == off ]]; then
-    # A click keys and raises what it hits; focus follows the pointer
-    # again from there.
-    $HID glide $RX $RY $LX $LY; sleep 1; $HID click $LX $LY; sleep 0.6
-    check "[$mode] a click still raises the window it hits" left "$(top)"
-    $HID glide $LX $LY $RX $RY; sleep 1
-    check "[$mode] after a click, resting on a covered window focuses it" right "$(key_window)"
-    check "[$mode] without raising it" "left A right" "$(stack)"
-  fi
-  $HID glide $RX $RY $FX $FY; sleep 1
-  check "[$mode] back on Finder's window focuses Finder" com.apple.finder "$(front)"
-  osascript -e "tell application id \"$TYPEID\" to quit"; sleep 1
-}
-overlap on
-overlap off
 
 # MARK: Report
 

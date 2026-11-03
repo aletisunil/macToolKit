@@ -155,41 +155,6 @@ enum PrivateCGS {
         return down == .success && up == .success
     }
 
-    /// Makes `windowID` the key window and its app active without bringing
-    /// any window forward - Windows' active window tracking with "Move
-    /// window to top when activating" off. kCPSNoWindows activates the
-    /// process with its windows left where they are, and the synthetic click
-    /// of `makeKeyWindow` keys the window. Within an app that is already
-    /// active that click alone is ignored: hand key focus over with
-    /// `postKeyFocus` first. Returns false when a symbol is missing.
-    static func activateWithoutRaise(pid: pid_t, windowID: CGWindowID) -> Bool {
-        guard let getProcessForPID, let setFrontProcessWithOptions else { return false }
-        var psn = ProcessSerialNumber()
-        guard getProcessForPID(pid, &psn) == noErr else { return false }
-        let kCPSNoWindows: UInt32 = 0x400
-        guard setFrontProcessWithOptions(&psn, windowID, kCPSNoWindows) == .success else { return false }
-        return makeKeyWindow(pid: pid, windowID: windowID)
-    }
-
-    /// A key-focus change (event 0x0d) inside `pid`'s app: `gained` false
-    /// takes key focus from `windowID`, true gives it to `windowID`. Posted
-    /// as a pair - lost, then gained a little later - it moves key focus
-    /// between two windows of the active app, as yabai's
-    /// window_manager_focus_window_without_raise does. Returns false when a
-    /// symbol is missing.
-    static func postKeyFocus(pid: pid_t, windowID: CGWindowID, gained: Bool) -> Bool {
-        guard let getProcessForPID, let postEventRecordTo else { return false }
-        var psn = ProcessSerialNumber()
-        guard getProcessForPID(pid, &psn) == noErr else { return false }
-        var bytes = [UInt8](repeating: 0, count: 0x100)
-        bytes[0x04] = 0xf8
-        bytes[0x08] = 0x0d
-        bytes[0x8a] = gained ? 0x01 : 0x02
-        var id = windowID
-        withUnsafeBytes(of: &id) { bytes.replaceSubrange(0x3c..<0x40, with: $0) }
-        return postEventRecordTo(&psn, &bytes) == .success
-    }
-
     /// The window the window server would deliver a click at `point` to
     /// (global coordinates, top-left origin), honouring event shapes - so
     /// the Dock's transparent screen-sized window doesn't count except over
