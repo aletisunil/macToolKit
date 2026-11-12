@@ -672,9 +672,9 @@ private struct MousePane: View {
                              isEnabled: appState.sideButtonsEnabled,
                              tapActive: sideButtons.tapActive)
             RowDivider()
-            AppListRows(title: "Leave these apps alone",
-                        caption: "They get the buttons unchanged - for apps with side-button actions of their own.",
-                        pickerMessage: "Choose apps that should get the side buttons unchanged.",
+            AppListRows(title: "Apps with their own back and forward",
+                        caption: "If the side buttons don't go back and forward in an app, add it here. The app then gets the buttons directly.",
+                        pickerMessage: "Choose apps where the side buttons don't go back and forward.",
                         store: sideButtons.exceptions)
         }
     }
