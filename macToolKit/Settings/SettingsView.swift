@@ -481,7 +481,7 @@ private struct DisplayPane: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 220)
+                .frame(width: 220, alignment: .trailing)
             }
         }
 
@@ -517,13 +517,13 @@ private struct DisplayPane: View {
                     CardRow(title: "Evening starts", caption: nil) {
                         MinutePicker(label: "", minutes: $controller.fallbackSunsetMinutes)
                             .labelsHidden()
-                            .frame(width: 110)
+                            .frame(width: 110, alignment: .trailing)
                     }
                     RowDivider()
                     CardRow(title: "Morning starts", caption: nil) {
                         MinutePicker(label: "", minutes: $controller.fallbackSunriseMinutes)
                             .labelsHidden()
-                            .frame(width: 110)
+                            .frame(width: 110, alignment: .trailing)
                     }
                 }
                 Text("Nights use the temperature above, fading over 30 minutes.")
@@ -625,12 +625,52 @@ private struct RewritelyPane: View {
 
 private struct MousePane: View {
     @EnvironmentObject private var appState: AppState
-    @ObservedObject private var scroll = AppState.shared.scrollReverser
+    @ObservedObject private var scroll = AppState.shared.scrollTap
     @ObservedObject private var sideButtons = AppState.shared.sideButtons
 
     var body: some View {
         HeroCard(tab: .mouse) {
             EmptyView()
+        }
+
+        FeatureCard(icon: "water.waves", tint: .mint,
+                    title: "Smooth Scrolling",
+                    caption: "A mouse wheel glides like a trackpad instead of jumping one notch at a time. The trackpad is left alone.") {
+            StatusChip(isOn: appState.smoothScrollingEnabled) {
+                appState.smoothScrollingEnabled.toggle()
+            }
+        } content: {
+            TapStatusWarning(featureName: "Smooth Scrolling",
+                             isEnabled: appState.smoothScrollingEnabled,
+                             tapActive: scroll.tapActive)
+            RowDivider()
+            CardRow(title: "Glide",
+                    caption: "How long each notch takes to come to a stop.") {
+                Picker("", selection: $scroll.smoothness) {
+                    ForEach(ScrollSmoothness.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 220, alignment: .trailing)
+            }
+            CardRow(title: "Speed",
+                    caption: "Distance per notch. At 1× a notch scrolls as far as in Safari or Chrome.") {
+                ValueBadge(text: scroll.smoothSpeed.formatted(.number.precision(.fractionLength(0...2))) + "×")
+            }
+            HStack(spacing: 12) {
+                Text("Shorter")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Slider(value: $scroll.smoothSpeed, in: ScrollTap.speedRange, step: 0.25)
+                Text("Farther")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            RowDivider()
+            AppListRows(title: "Apps that get the raw wheel",
+                        caption: "If an app scrolls wrongly with smoothing - a game or a remote desktop, say - add it here.",
+                        pickerMessage: "Choose apps that should get the mouse wheel without smoothing.",
+                        store: scroll.smoothExceptions)
         }
 
         FeatureCard(icon: "arrow.up.arrow.down", tint: .teal,
@@ -808,7 +848,7 @@ private struct WindowSwitcherPane: View {
                     Text("0.5 s").tag(0.5)
                 }
                 .labelsHidden()
-                .frame(width: 110)
+                .frame(width: 110, alignment: .trailing)
             }
             RowDivider()
             CardRow(title: "Appears on", caption: nil) {
@@ -818,7 +858,7 @@ private struct WindowSwitcherPane: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 160)
+                .frame(width: 160, alignment: .trailing)
             }
         }
 
@@ -833,7 +873,7 @@ private struct WindowSwitcherPane: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 200)
+                .frame(width: 200, alignment: .trailing)
             }
             RowDivider()
             CardRow(title: "Alignment", caption: nil) {
@@ -844,7 +884,7 @@ private struct WindowSwitcherPane: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 160)
+                .frame(width: 160, alignment: .trailing)
             }
             RowDivider()
             CardRow(title: "Theme", caption: nil) {
@@ -855,7 +895,7 @@ private struct WindowSwitcherPane: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 200)
+                .frame(width: 200, alignment: .trailing)
             }
             RowDivider()
             CardRow(title: "Fade in", caption: nil) {
@@ -973,7 +1013,7 @@ private struct ShortcutSlotCard: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 160)
+                .frame(width: 160, alignment: .trailing)
             }
             CardRow(title: "Then press", caption: nil) {
                 Picker("", selection: $slot.key) {
@@ -983,7 +1023,7 @@ private struct ShortcutSlotCard: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 110)
+                .frame(width: 110, alignment: .trailing)
             }
             CardRow(title: "Style", caption: nil) {
                 Picker("", selection: $slot.style) {
@@ -992,7 +1032,7 @@ private struct ShortcutSlotCard: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 130)
+                .frame(width: 130, alignment: .trailing)
             }
             RowDivider()
             CardRow(title: "Only windows on the active Space", caption: nil) {
@@ -1106,7 +1146,7 @@ private struct FinderPane: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 250)
+                .frame(width: 250, alignment: .trailing)
             }
         }
 
@@ -1363,7 +1403,7 @@ private struct GeneralPane: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 220)
+                .frame(width: 220, alignment: .trailing)
             }
             RowDivider()
             CardRow(title: "Show in Dock",

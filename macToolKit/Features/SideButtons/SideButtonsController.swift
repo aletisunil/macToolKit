@@ -9,8 +9,10 @@ import os
 /// event a trackpad sends. That works wherever swiping between pages does -
 /// Finder, Safari, Chrome, App Store, System Settings - without the
 /// collisions of a keyboard shortcut: ⌘[ means "back" in a browser but
-/// "outdent" in a code editor. The swipe goes to the window under the
-/// pointer, like the click it replaces.
+/// "outdent" in a code editor. The swipe acts on the window under the
+/// pointer, like the click it replaces. An app only acts on a swipe in its
+/// key window while it is active, so a window that isn't comes forward and
+/// takes focus first - exactly what a click on it would do.
 ///
 /// Apps on the exception list get the raw button events instead, for apps
 /// that handle side buttons themselves or use them for something else.
@@ -78,13 +80,17 @@ private final class SideButtonNavigator: Sendable {
 
         switch type {
         case .otherMouseDown:
-            if let owner = Self.bundleIDOfWindow(at: event.location),
+            let hit = WindowHitTest.window(at: event.location)
+            if let owner = hit.flatMap(Self.bundleID),
                exceptions.withLock({ $0.contains(owner) }) {
                 return true
             }
             consumed.withLock { _ = $0.insert(button) }
             let back = button == Self.backButton
-            queue.async { Self.postSwipe(back: back) }
+            queue.async {
+                Self.focus(hit)
+                Self.postSwipe(back: back)
+            }
             return false
         case .otherMouseUp:
             return consumed.withLock { $0.remove(button) == nil }
@@ -94,10 +100,45 @@ private final class SideButtonNavigator: Sendable {
     }
 
     /// Owner of the window the click would have gone to.
-    private static func bundleIDOfWindow(at point: CGPoint) -> String? {
-        WindowHitTest.window(at: point).flatMap {
-            NSRunningApplication(processIdentifier: $0.pid)?.bundleIdentifier
+    private static func bundleID(of hit: WindowHitTest.Hit) -> String? {
+        NSRunningApplication(processIdentifier: hit.pid)?.bundleIdentifier
+    }
+
+    // MARK: Focus
+
+    /// Makes the pointed window the active app's key window, unless it is
+    /// already. A swipe that lands anywhere else does nothing: measured with
+    /// Finder, it is ignored by a background app's window and by an
+    /// unfocused window of the active app alike.
+    private static func focus(_ hit: WindowHitTest.Hit?) {
+        // Layer 0 only: the Dock, the menu bar and panels never take focus.
+        guard let hit, hit.layer == 0 else { return }
+        let app = AXWindow.appElement(for: hit.pid)
+        guard !isKeyWindowOfActiveApp(hit, app: app) else { return }
+        // Fronts the app on the window, and keys it - enough when the app
+        // was in the background.
+        _ = PrivateCGS.setFrontProcess(pid: hit.pid, windowID: hit.windowID)
+        _ = PrivateCGS.makeKeyWindow(pid: hit.pid, windowID: hit.windowID)
+        // Within the app that is already active, neither call reorders its
+        // windows; the Accessibility raise does. It runs before the swipe is
+        // posted, so the swipe finds the window keyed.
+        if let window = AXWindow.windows(of: app)
+            .first(where: { AXWindow.windowID(of: $0) == hit.windowID }) {
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         }
+        log.log("focused window \(hit.windowID, privacy: .public) for the swipe")
+    }
+
+    /// Whether the swipe would reach the window as things are: its app is
+    /// the active one and the window is that app's focused window. Being the
+    /// topmost window on screen is not enough - with a windowless app active,
+    /// or the desktop clicked, the topmost window has no focus at all.
+    private static func isKeyWindowOfActiveApp(_ hit: WindowHitTest.Hit,
+                                               app: AXUIElement) -> Bool {
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == hit.pid,
+              let focused = AXWindow.elementAttribute(app, kAXFocusedWindowAttribute)
+        else { return false }
+        return AXWindow.windowID(of: focused) == hit.windowID
     }
 
     // MARK: Synthetic swipe

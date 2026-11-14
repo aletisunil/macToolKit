@@ -17,6 +17,9 @@
 //                                   n at the pointer, print what apps receive
 //                                   (e.g. "3d 3g 3u")
 //   hid scroll wheel|trackpad       post a +3 scroll, print the delta apps see
+//   hid wheel v|h <lines> <count> <gap-ms> [cmd|opt|shift|ctrl ...]
+//                                   count notched-wheel events of <lines> each,
+//                                   vertical or horizontal (thumb wheel)
 //   hid button <bundle-id> close|min|zoom
 //                                   center of the focused window's traffic
 //                                   light, and whether it is full screen
@@ -27,6 +30,8 @@
 //   hid popover                     whether the green button's Move & Resize
 //                                   menu is on screen: open|closed
 //   hid front                       frontmost app's bundle id
+//   hid top                         bundle id of the topmost ordinary
+//                                   (layer 0) window's owner
 //   hid clipboard                   names of the files on the pasteboard
 //                                   ("-" when it holds no files)
 //   hid visible                     main screen's visible frame: x y w h
@@ -93,6 +98,20 @@ func frame(of element: AXUIElement) -> CGRect {
     return CGRect(origin: origin, size: size)
 }
 
+func modifierFlags(_ names: ArraySlice<String>) -> CGEventFlags {
+    var flags: CGEventFlags = []
+    for name in names {
+        switch name {
+        case "cmd": flags.insert(.maskCommand)
+        case "opt": flags.insert(.maskAlternate)
+        case "shift": flags.insert(.maskShift)
+        case "ctrl": flags.insert(.maskControl)
+        default: fail("unknown modifier \(name)")
+        }
+    }
+    return flags
+}
+
 func printRect(_ rect: CGRect) {
     print(Int(rect.minX.rounded()), Int(rect.minY.rounded()),
           Int(rect.width.rounded()), Int(rect.height.rounded()))
@@ -103,16 +122,7 @@ case "trust":
     print(AXIsProcessTrusted() && CGPreflightPostEventAccess() ? "trusted" : "untrusted")
 
 case "key":
-    var flags: CGEventFlags = []
-    for modifier in args.dropFirst(3) {
-        switch modifier {
-        case "cmd": flags.insert(.maskCommand)
-        case "opt": flags.insert(.maskAlternate)
-        case "shift": flags.insert(.maskShift)
-        case "ctrl": flags.insert(.maskControl)
-        default: fail("unknown modifier \(modifier)")
-        }
-    }
+    let flags = modifierFlags(args.dropFirst(3))
     let source = CGEventSource(stateID: .hidSystemState)
     for down in [true, false] {
         guard let event = CGEvent(keyboardEventSource: source,
@@ -271,6 +281,26 @@ case "scroll":
     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { fail("scroll event never arrived") }
     CFRunLoopRun()
 
+case "wheel":
+    // Line-based events with no continuous flag: what a notched mouse wheel
+    // sends. Axis 1 is the main wheel, axis 2 the horizontal (thumb) wheel.
+    guard args.count > 5 else { fail("usage: hid wheel v|h <lines> <count> <gap-ms> [mods]") }
+    let horizontal = args[2] == "h"
+    let lines = Int32(number(3))
+    let count = Int(number(4))
+    let gap = useconds_t(number(5) * 1000)
+    let flags = modifierFlags(args.dropFirst(6))
+    for index in 0..<count {
+        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2,
+                                  wheel1: horizontal ? 0 : lines,
+                                  wheel2: horizontal ? lines : 0, wheel3: 0)
+        else { fail("cannot create scroll event") }
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 0)
+        event.flags = flags
+        event.post(tap: .cghidEventTap)
+        if index < count - 1 { usleep(gap) }
+    }
+
 case "button":
     guard args.count > 3 else { fail("usage: hid button <bundle-id> close|min|zoom") }
     let window = focusedWindow(args[2])
@@ -312,6 +342,13 @@ case "popover":
 
 case "front":
     print(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "-")
+
+case "top":
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                          kCGNullWindowID) as? [[String: Any]] ?? []
+    let top = list.first { $0[kCGWindowLayer as String] as? Int == 0 }
+    let pid = top?[kCGWindowOwnerPID as String] as? pid_t ?? 0
+    print(NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "-")
 
 case "clipboard":
     let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self],

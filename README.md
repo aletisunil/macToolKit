@@ -1,6 +1,6 @@
 # macToolKit
 
-Menu bar toolkit for macOS 26+ (Apple Silicon). Eleven tools, individually
+Menu bar toolkit for macOS 26+ (Apple Silicon). Twelve tools, individually
 toggled from the menu bar icon (Peek is a Quick Look extension
 that macOS manages). The menu and the Settings sidebar group them by what
 they act on: Windows, Mouse & Keyboard, Finder and System. General settings cover appearance (System/Light/Dark), an
@@ -13,6 +13,7 @@ optional dock icon ("Show in Dock") and launch at login.
 | Windows | Window Switcher | Accessibility (+ Screen Recording for thumbnails) | Alt-Tab style switcher; thumbnails, app icons or titles; per-shortcut slots |
 | Windows | Quit on Close | Accessibility | Closing an app's last window quits it; minimized windows, other Spaces and tab groups count; keep-running list |
 | Windows | Maximize Windows | Accessibility | The green button fills the screen; click again to restore, ⌥-click for full screen |
+| Mouse & Keyboard | Smooth Scrolling | Accessibility | A mouse wheel glides like a trackpad; glide length, speed and per-app exceptions. Trackpad and modifier+wheel untouched |
 | Mouse & Keyboard | Scroll Reverser | Accessibility | Trackpad/mouse and vertical/horizontal independently |
 | Mouse & Keyboard | Side Buttons | Accessibility | Mouse buttons 4 and 5 go back and forward via a navigation swipe; per-app exceptions |
 | Mouse & Keyboard | Rewritely - trigger-word AI rewrite | Accessibility | Apple Intelligence on-device; default triggers `;;fix` `;;tight` `;;prof` |
@@ -159,11 +160,18 @@ selects to the start of the field so text after the trigger is preserved.
   display changes; `ColorTemperatureController` reapplies automatically and
   `CGDisplayRestoreColorSyncSettings()` restores on disable/quit.
 - Event taps run on dedicated threads. `Support/EventTap.swift` is the shared
-  lifecycle (thread, permission wait, 2 s watchdog) for Scroll Reverser, Side
+  lifecycle (thread, permission wait, 2 s watchdog) for the scroll tap, Side
   Buttons, Maximize Windows and Cut & Paste; the Window
   Switcher has its own. Rewritely's listen-only tap stays on the main run
   loop. All of them recover from `tapDisabledByTimeout` both in the callback
   and from the watchdog, since the disable notification itself can be missed.
+- Scroll Reverser and Smooth Scrolling share one tap (`Features/Scrolling`),
+  so an event is always reversed first and smoothed second. A glide is
+  posted at the session level as phase-less pixel events, one per display
+  frame from a `CADisplayLink` on its own thread: phased events make AppKit
+  add its own momentum, so the distance would no longer be exact. Modifier +
+  wheel passes through raw - AppKit only turns ⇧ + wheel sideways for
+  line-based events.
 - "Which window is under the pointer" is the window server's hit test
   (`SLSFindWindowAndOwner`, `Support/WindowHitTest.swift`), not a walk of
   `CGWindowListCopyWindowInfo`: the Dock keeps a transparent, screen-sized

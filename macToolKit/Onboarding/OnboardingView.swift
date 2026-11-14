@@ -38,8 +38,9 @@ struct OnboardingView: View {
                 case 3:
                     FeaturePage(
                         tab: .mouse,
-                        headline: "Scroll the way you like on each device, and put the side buttons to work.",
+                        headline: "Scroll smoothly and the way you like on each device, and put the side buttons to work.",
                         steps: [
+                            "**Smooth Scrolling** - a mouse wheel glides like a trackpad instead of jumping a notch at a time.",
                             "**Scroll Reverser** - flip the trackpad, a mouse wheel, or both.",
                             "Each keeps its own direction - natural on the trackpad, classic on the wheel.",
                             "**Side Buttons** - mouse buttons 4 and 5 go back and forward in Finder, Safari and more.",
@@ -172,7 +173,7 @@ private struct WelcomePage: View {
                 FeatureRow(tab: .windowBehavior,
                            detail: "Quit on close and maximize.")
                 FeatureRow(tab: .mouse,
-                           detail: "Scroll direction per device, and side buttons.")
+                           detail: "Smooth wheel scrolling, scroll direction per device, and side buttons.")
                 FeatureRow(tab: .rewritely,
                            detail: "End text with a trigger word to rewrite it.")
                 FeatureRow(tab: .finder,

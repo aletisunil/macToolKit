@@ -1,18 +1,21 @@
 #!/bin/zsh
 # End-to-end test for the input and window features: Quit on Close, Maximize
-# Windows, Side Buttons, Finder Cut & Paste and Scroll Reverser. Real HID events go through the Debug build's event taps; results
-# are read back from Finder, Preview, Accessibility and the app's own log.
+# Windows, Side Buttons, Finder Cut & Paste, Scroll Reverser and Smooth
+# Scrolling. Real HID events go through the Debug build's event taps; results
+# are read back from Finder, Preview, a logging scroll view, Accessibility and
+# the app's own log.
 #
 #   Scripts/e2e/input-features.sh [output-dir]
 #
 # Needs: a Debug build (xcodebuild ... -configuration Debug build), Preview
 # not running, and a shell with Accessibility access (`hid trust`). It moves
-# the pointer and drives Finder and Preview for about a minute - leave the Mac
-# alone meanwhile. The Debug app's defaults are backed up and restored,
+# the pointer and drives Finder, Preview and a Terminal window for about two
+# minutes - leave the Mac alone meanwhile. The Debug app's defaults are backed up and restored,
 # and a running release macToolKit is quit for the run and relaunched after.
 #
 # Writes <output-dir>/report.md (one PASS/FAIL line per check plus the app's
-# log for the run) and exits with the number of failed checks.
+# log for the run) and <output-dir>/scroll-timeline.svg (distance scrolled
+# over time, smoothing off and on), and exits with the number of failed checks.
 
 set -u
 ROOT=${0:A:h:h:h}
@@ -52,6 +55,15 @@ PLIST
 TESTAPP=$WORK/TestWindow.app
 TESTID=com.sunilaleti.e2e.testwindow
 build_app TestWindow testwindow.swift $TESTID
+# A scrollable canvas that logs what the wheel did to it (Smooth Scrolling).
+SVAPP=$WORK/ScrollView.app
+SVID=com.sunilaleti.e2e.scrollview
+SVLOG=$WORK/scrollview.log
+build_app ScrollView scrollview.swift $SVID
+# An app with no windows (Side Buttons).
+WLAPP=$WORK/Windowless.app
+WLID=com.sunilaleti.e2e.windowless
+build_app Windowless windowless.swift $WLID
 
 # MARK: Helpers
 
@@ -91,6 +103,10 @@ near() {
   for i in 1 2 3 4; do (( ${a[i]} - ${b[i]} > 4 || ${b[i]} - ${a[i]} > 4 )) && { echo no; return; }; done
   echo yes
 }
+
+mark() { wc -l < "$SVLOG" | tr -d ' '; }
+sv_stats() { python3 "$ROOT/Scripts/e2e/scrollstats.py" stats "$SVLOG" "$1"; }
+fact() { echo "$FACTS" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 
 json_apps() { python3 -c 'import json,sys;print(json.dumps([{"bundleID":b,"name":n} for b,n in zip(sys.argv[1::2],sys.argv[2::2])],separators=(",",":")).encode().hex())' "$@"; }
 
@@ -137,6 +153,10 @@ cleanup() {
     -e "try" -e "if POSIX path of (target of Finder window id i as alias) starts with \"$WORK/\" then close Finder window id i" \
     -e 'end try' -e 'end repeat' -e 'end tell' 2>/dev/null
   osascript -e 'tell application "Preview" to quit' 2>/dev/null
+  pkill -f "$WORK/ScrollView.app" 2>/dev/null
+  pkill -f "$WLAPP" 2>/dev/null
+  [[ -n ${TTY_WINDOW:-} ]] && osascript -e "tell application \"Terminal\" to close (every window whose id is $TTY_WINDOW)" 2>/dev/null
+  [[ ${TERMINAL_WAS_RUNNING:-yes} == no ]] && osascript -e 'tell application "Terminal" to quit' 2>/dev/null
   defaults delete $DOMAIN 2>/dev/null
   [[ -f $WORK/defaults-backup.plist ]] && defaults import $DOMAIN "$WORK/defaults-backup.plist"
   [[ $RELEASE_WAS_RUNNING == yes ]] && open -g /Applications/macToolKit.app
@@ -157,6 +177,10 @@ done
 defaults write $DOMAIN scrollReverseTrackpad -bool false
 defaults write $DOMAIN scrollReverseMouse -bool true
 defaults write $DOMAIN scrollReverseVertical -bool true
+# Off at first: the Scroll Reverser checks read the raw wheel event, which
+# smoothing replaces. The Smooth Scrolling section turns it on from the menu.
+defaults write $DOMAIN smoothScrollingEnabled -bool false
+defaults write $DOMAIN smoothScrollExceptions -data $(json_apps)
 defaults write $DOMAIN quitOnCloseExceptions -data $(json_apps)
 defaults write $DOMAIN sideButtonsExceptions -data $(json_apps)
 launch_app
@@ -173,14 +197,168 @@ section "Scroll Reverser"
 check "mouse wheel +3 arrives reversed" "-3" "$($HID scroll wheel)"
 check "trackpad scroll is left alone (trackpad reversal off)" "1" "$($HID scroll trackpad)"
 
+# MARK: Smooth Scrolling
+
+section "Smooth Scrolling"
+# ScrollView logs every wheel event it gets and every position its canvas
+# moves through - what a person scrolling it would see.
+open -n "$SVAPP" --args "$SVLOG"; sleep 2
+osascript -e 'tell application "System Events" to tell process "ScrollView"' \
+  -e "set position of window 1 to {$((VX + 720)), $((VY + 40))}" -e 'set size of window 1 to {600, 500}' -e 'end tell'
+SVX=$((VX + 1020)); SVY=$((VY + 290))
+$HID move $SVX $SVY; sleep 0.5
+
+# wheel <hid wheel args...>: turn the wheel, let any animation settle, and
+# leave ScrollView's view of it in $FACTS (see scrollstats.py).
+wheel() { local from=$(mark); $HID wheel "$@"; sleep 1.2; FACTS=$(sv_stats $from); echo "  $* -> $FACTS"; }
+
+OFF_FROM=$(mark); wheel v 3 1 0; OFF_TO=$(mark)
+check "with Smooth Scrolling off, a notch reaches the app as one raw wheel event" "raw=1 precise=0" \
+  "raw=$(fact raw) precise=$(fact precise)"
+RAW_LINES=$(fact ly)
+
+menu_toggle "Smooth Scrolling"
+ON_FROM=$(mark); wheel v 3 1 0; ON_TO=$(mark)
+check "a 3-line notch reaches the app only as pixel-precise events" "raw=0" "raw=$(fact raw)"
+# Scroll Reverser is on for the mouse: +3 lines becomes -3, which moves the
+# canvas down by 3 lines of 40 pt. Reversed once - not twice, not never.
+check "it moves exactly 3 lines of 40 pt, reversed once by Scroll Reverser" 120 "$(fact dy)"
+check "in many small steps, not one jump" yes "$( (( $(fact moves) >= 8 )) && echo yes || echo "no ($(fact moves))")"
+check "and settles in 120 to 600 ms" yes "$( (( $(fact ms) >= 120 && $(fact ms) <= 600 )) && echo yes || echo "no ($(fact ms) ms)")"
+# Apps that read lines, not points - terminals, games, Carbon and Java apps -
+# must see the notch's own lines, one whole line per event at most, not a
+# line for every small pixel step of the glide.
+check "apps that count lines get the same 3 lines as from the raw notch" "ly=$RAW_LINES steps=3" \
+  "ly=$(fact ly) steps=$(fact steps)"
+
+wheel v 1 3 40
+check "three quick 1-line notches add up to one smooth 120 pt scroll" "dy=120 flips=0 raw=0" \
+  "dy=$(fact dy) flips=$(fact flips) raw=$(fact raw)"
+check "and 3 lines for apps that count lines" "ly=$RAW_LINES steps=3" "ly=$(fact ly) steps=$(fact steps)"
+
+FLIP_FROM=$(mark); $HID wheel v 3 1 0; sleep 0.06; wheel v -3 1 0; FLIP_TO=$(mark)
+FACTS=$(sv_stats $FLIP_FROM)
+check "turning the wheel back mid-scroll reverses once, with no jerk back" 1 "$(fact flips)"
+check "and the new direction wins" yes "$( (( $(fact dy) < 0 )) && echo yes || echo "no (dy $(fact dy))")"
+
+wheel h 2 1 0
+check "the horizontal (thumb) wheel scrolls smoothly too, exactly 2 lines" "dx=-80 dy=0 raw=0" \
+  "dx=$(fact dx) dy=$(fact dy) raw=$(fact raw)"
+check "in many small steps" yes "$( (( $(fact moves) >= 8 )) && echo yes || echo "no ($(fact moves))")"
+check "and 2 lines for apps that count lines" "lx=2 steps=2" "lx=$(fact lx) steps=$(fact steps)"
+
+wheel v 3 1 0 cmd
+check "⌘ + wheel reaches the app raw, so zooming still works" "raw=1 precise=0 mods=cmd" \
+  "raw=$(fact raw) precise=$(fact precise) mods=$(fact mods)"
+wheel v 3 1 0 shift
+check "⇧ + wheel reaches the app raw and still scrolls sideways" "raw=1 dx=30 dy=0" \
+  "raw=$(fact raw) dx=$(fact dx) dy=$(fact dy)"
+check "trackpad scroll is still left alone with smoothing on" "1" "$($HID scroll trackpad)"
+
+# The pointer moves to another window mid-scroll: the rest of the scroll must
+# not land there, and must stop in the window it left.
+LEAVE_FROM=$(mark); $HID wheel v 10 1 0; sleep 0.06; $HID move $((VX + 370)) $((VY + 250)); sleep 1.2
+FACTS=$(sv_stats $LEAVE_FROM); $HID move $SVX $SVY; sleep 0.3
+check "moving the pointer to another window stops the scroll there" yes \
+  "$( (( $(fact dy) > 0 && $(fact dy) < 400 )) && echo yes || echo "no (dy $(fact dy) of 400)")"
+
+SPIN_FROM=$(mark); wheel v 1 60 4; SPIN_TO=$(mark)
+check "a fast free-spin (60 events in 240 ms) scrolls exactly 60 lines" "dy=2400 raw=0" \
+  "dy=$(fact dy) raw=$(fact raw)"
+check "and stops within a second, without lagging behind the wheel" yes \
+  "$( (( $(fact ms) < 1000 )) && echo yes || echo "no ($(fact ms) ms)")"
+check "and 60 lines for apps that count lines" "ly=$((RAW_LINES * 20))" "ly=$(fact ly)"
+
+# A real line-based app: Terminal with mouse reporting on, as tmux, vim
+# (mouse=a) and htop turn it on. Terminal sends one wheel report per event
+# that carries lines, so a notch must still be 3 reports, not one per frame.
+TERMINAL_WAS_RUNNING=$(pgrep -x Terminal >/dev/null && echo yes || echo no)
+open -ga Terminal; sleep 3
+TTY_OUT=$WORK/ttywheel.txt
+TTY_WINDOW=$(osascript -e 'tell application "Terminal"' \
+  -e "do script \"python3 -I '$ROOT/Scripts/e2e/ttywheel.py' '$TTY_OUT' 4; exit\"" -e 'activate' \
+  -e "set bounds of window 1 to {$((VX + 720)), $((VY + 40)), $((VX + 1320)), $((VY + 540))}" \
+  -e 'return id of window 1' -e 'end tell')
+for i in {1..50}; do [[ -f $TTY_OUT.ready ]] && break; sleep 0.1; done; sleep 0.4
+$HID move $SVX $SVY; sleep 0.3
+$HID wheel v 3 1 0
+for i in {1..80}; do [[ -f $TTY_OUT ]] && break; sleep 0.1; done
+TTY=$(cat "$TTY_OUT" 2>/dev/null); echo "  Terminal sent: $TTY"
+check "a 3-line notch in Terminal (tmux, vim) is 3 wheel reports" "up=0 down=3" "$TTY"
+sleep 0.5; osascript -e "tell application \"Terminal\" to close (every window whose id is $TTY_WINDOW)" 2>/dev/null; TTY_WINDOW=
+[[ $TERMINAL_WAS_RUNNING == no ]] && osascript -e 'tell application "Terminal" to quit'
+osascript -e "tell application id \"$SVID\" to activate"; sleep 0.6
+
+sleep 2
+CPU=$(top -l 2 -s 1 -pid $(pgrep -f "macToolKit Debug.app/Contents/MacOS") -stats cpu | tail -1)
+check "idle afterwards: the app uses under 1% CPU" yes "$(awk -v c="$CPU" 'BEGIN { print (c < 1 ? "yes" : "no (" c "%)") }')"
+
+menu_toggle "Smooth Scrolling"
+wheel v 3 1 0
+check "switched off from the menu, the wheel is raw again" "raw=1 precise=0" \
+  "raw=$(fact raw) precise=$(fact precise)"
+
+python3 "$ROOT/Scripts/e2e/scrollstats.py" chart "$SVLOG" "$OUT/scroll-timeline.svg" \
+  "One notch (3 lines)|smoothing off:$OFF_FROM:$OFF_TO|smoothing on:$ON_FROM:$ON_TO" \
+  "Wheel turned back after 60 ms|3 lines down, then 3 up:$FLIP_FROM:$FLIP_TO" \
+  "Free spin: 60 notches in 240 ms|smoothing on:$SPIN_FROM:$SPIN_TO"
+echo "- Timeline: \`scroll-timeline.svg\` (points in \`scroll-timeline.csv\`)" >> "$REPORT"
+
 # MARK: Side Buttons
 
 section "Side Buttons"
+osascript -e 'tell application "Finder" to activate'; sleep 0.5
+W1=$(osascript -e 'tell application "Finder" to get id of front window')
 $HID move $((VX + 370)) $((VY + 250)); sleep 0.4
 $HID side back; sleep 0.9
 check "button 4 over Finder goes back" "$WORK/nav/A/" "$(finder_path)"
 $HID side forward; sleep 0.9
 check "button 5 over Finder goes forward" "$WORK/nav/A/B/" "$(finder_path)"
+
+# The side buttons act on the window they point at, like the click they
+# replace - not only when it already has focus. A swipe reaches only the
+# key window of the active app, so a window that isn't must come forward.
+win_path() { osascript -e "tell application \"Finder\" to get POSIX path of (target of Finder window id $1 as alias)"; }
+# A second Finder window with its own history (C -> D), clear of the first.
+mkdir -p "$WORK/nav/C/D"
+W2=$(osascript -e "tell application \"Finder\" to make new Finder window to POSIX file \"$WORK/nav/C\"" -e 'delay 0.8' \
+  -e "tell application \"Finder\" to set target of front window to POSIX file \"$WORK/nav/C/D\"" \
+  -e "tell application \"Finder\" to set bounds of front window to {$((VX + 740)), $((VY + 40)), $((VX + 1380)), $((VY + 460))}" \
+  -e 'tell application "Finder" to get id of front window')
+# Another app in front; the pointer rests on the first Finder window, which
+# is not even Finder's front window.
+osascript -e "tell application id \"$SVID\" to activate"; sleep 0.6
+$HID move $((VX + 370)) $((VY + 250)); sleep 0.4
+check "another app is in front" $SVID "$(front)"
+$HID side back; sleep 0.9
+check "button 4 over a background app's window goes back in that window" "$WORK/nav/A/" "$(win_path $W1)"
+check "the other Finder window is untouched" "$WORK/nav/C/D/" "$(win_path $W2)"
+check "and the window comes forward, like a click" com.apple.finder "$(front)"
+check "as Finder's front window" "$W1" "$(osascript -e 'tell application "Finder" to get id of front window')"
+# Finder active with the second window focused; the pointer is on the first,
+# whose history is A -> B whatever happened above.
+osascript -e "tell application \"Finder\" to set target of Finder window id $W1 to POSIX file \"$WORK/nav/A\"" -e 'delay 0.4' \
+  -e "tell application \"Finder\" to set target of Finder window id $W1 to POSIX file \"$WORK/nav/A/B\"" \
+  -e "tell application \"Finder\" to set index of Finder window id $W2 to 1" -e 'tell application "Finder" to activate'; sleep 0.6
+check "Finder is active, with the other window focused" "com.apple.finder $W2" \
+  "$(front) $(osascript -e 'tell application "Finder" to get id of front window')"
+$HID side back; sleep 0.9
+check "button 4 over the unfocused window of the active app goes back there" "$WORK/nav/A/" "$(win_path $W1)"
+check "the focused window is untouched" "$WORK/nav/C/D/" "$(win_path $W2)"
+check "the pointed window takes focus" "$W1" "$(osascript -e 'tell application "Finder" to get id of front window')"
+osascript -e "tell application \"Finder\" to close Finder window id $W2"; sleep 0.4
+# The active app has no window at all - Preview, Mail or Safari after their
+# last window closed - so Finder's window is on top of everything, yet it is
+# not the key window of the active app, and a swipe alone goes nowhere.
+osascript -e "tell application \"Finder\" to set target of Finder window id $W1 to POSIX file \"$WORK/nav/A\"" -e 'delay 0.4' \
+  -e "tell application \"Finder\" to set target of Finder window id $W1 to POSIX file \"$WORK/nav/A/B\"" \
+  -e 'tell application "Finder" to activate'; sleep 0.6
+open -n "$WLAPP"; sleep 1.2
+check "a windowless app is active, with Finder's window on top" "$WLID com.apple.finder" "$(front) $($HID top)"
+$HID side back; sleep 0.9
+check "button 4 over that Finder window goes back there" "$WORK/nav/A/" "$(win_path $W1)"
+check "and Finder comes forward, like a click" com.apple.finder "$(front)"
+pkill -f "$WLAPP"
 
 # MARK: Maximize Windows
 
@@ -296,16 +474,27 @@ go "$SRC"; sel delta.txt; $HID key 36; sleep 0.8; $HID key 7 cmd; sleep 0.8; $HI
 check "⌘X while renaming cuts text, not files" 0 "$(logged "$SINCE" FinderCutPaste 'cut ')"
 check "the rename was cancelled cleanly" "delta.txt epsilon.txt" "$(listing "$SRC")"
 # Another key released while ⌘X is down: the ⌘C that replaced ⌘X must still
-# come back up (keycodes: 0 = A, 7 = X, 8 = C).
-check "⌘X with a key released in between still releases its ⌘C" "0d 8d 0u 8u" "$($HID keys 0:d 7+cmd:d 0:u 7+cmd:u)"
+# come back up (keycodes: 0 = A, 7 = X, 8 = C). Where A's release lands
+# relative to the ⌘C press doesn't matter, and depends on how fast Finder
+# answers the rename check - only that ⌘C goes down, then up, and A too.
+KEYS=$($HID keys 0:d 7+cmd:d 0:u 7+cmd:u)
+check "⌘X with a key released in between still releases its ⌘C" yes \
+  "$([[ $KEYS == "0d 8d 0u 8u" || $KEYS == "0d 0u 8d 8u" ]] && echo yes || echo "no ($KEYS)")"
 
 # MARK: Phase 2 - the exception lists
 
 defaults write $DOMAIN quitOnCloseExceptions -data $(json_apps com.apple.Preview Preview)
 defaults write $DOMAIN sideButtonsExceptions -data $(json_apps com.apple.finder Finder)
+defaults write $DOMAIN smoothScrollingEnabled -bool true
+defaults write $DOMAIN smoothScrollExceptions -data $(json_apps $SVID ScrollView)
 launch_app
 
 section "Exception lists"
+osascript -e "tell application id \"$SVID\" to activate"; $HID move $SVX $SVY; sleep 0.6
+wheel v 3 1 0
+check "ScrollView on the smooth-scrolling list gets the raw wheel event" "raw=1 precise=0" \
+  "raw=$(fact raw) precise=$(fact precise)"
+
 LEFT=$((VX + 360)); RIGHT=$((VX + 1060)); MID=$((VY + 260))
 preview_open "$WORK/images/one.png"
 osascript -e "tell application \"Preview\" to set bounds of front window to {$((VX + 40)), $((VY + 40)), $((VX + 680)), $((VY + 480))}" \

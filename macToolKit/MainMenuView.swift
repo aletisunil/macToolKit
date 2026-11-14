@@ -27,6 +27,7 @@ struct MainMenuView: View {
                 Toggle("Maximize Windows", isOn: $appState.maximizeWindowsEnabled)
             }
             Section("Mouse & Keyboard") {
+                Toggle("Smooth Scrolling", isOn: $appState.smoothScrollingEnabled)
                 Toggle("Scroll Reverser", isOn: $appState.scrollReverserEnabled)
                 Toggle("Side Buttons", isOn: $appState.sideButtonsEnabled)
                 Toggle("Rewritely", isOn: $appState.rewritelyEnabled)

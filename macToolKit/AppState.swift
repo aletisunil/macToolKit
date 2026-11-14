@@ -65,7 +65,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .general: "Appearance, dock icon and permissions."
         case .display: "Warms the display in the evening so it's easier on the eyes. Manual slider or fully automatic."
         case .rewritely: "Type a trigger word at the end of any text field and the text is rewritten in place."
-        case .mouse: "Scroll direction per device, and side buttons that go back and forward."
+        case .mouse: "Smooth wheel scrolling, scroll direction per device, and side buttons that go back and forward."
         case .windowSwitcher: "Hold ⌥ and press Tab to switch between windows. Previews, minimized windows and all."
         case .windowBehavior: "How windows close, fill the screen and take focus."
         case .finder: "Look inside folders and archives, and move files with cut and paste."
@@ -94,7 +94,7 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     let colorTemperature = ColorTemperatureController()
-    let scrollReverser = ScrollTap()
+    let scrollTap = ScrollTap()
     let rewritely = RewritelyController()
     let windowSwitcher = WindowSwitcherController()
     let audioPriority = AudioPriorityController()
@@ -131,7 +131,14 @@ final class AppState: ObservableObject {
     @Published var scrollReverserEnabled: Bool {
         didSet {
             defaults.set(scrollReverserEnabled, forKey: "scrollReverserEnabled")
-            scrollReverserEnabled ? scrollReverser.start() : scrollReverser.stop()
+            scrollTap.reverserEnabled = scrollReverserEnabled
+        }
+    }
+
+    @Published var smoothScrollingEnabled: Bool {
+        didSet {
+            defaults.set(smoothScrollingEnabled, forKey: "smoothScrollingEnabled")
+            scrollTap.smoothingEnabled = smoothScrollingEnabled
         }
     }
 
@@ -209,6 +216,7 @@ final class AppState: ObservableObject {
         showInDock = defaults.bool(forKey: "showInDock")
         colorTemperatureEnabled = defaults.bool(forKey: "colorTemperatureEnabled")
         scrollReverserEnabled = defaults.bool(forKey: "scrollReverserEnabled")
+        smoothScrollingEnabled = defaults.bool(forKey: "smoothScrollingEnabled")
         rewritelyEnabled = defaults.bool(forKey: "rewritelyEnabled")
         windowSwitcherEnabled = defaults.bool(forKey: "windowSwitcherEnabled")
         audioPriorityEnabled = defaults.bool(forKey: "audioPriorityEnabled")
@@ -233,7 +241,8 @@ final class AppState: ObservableObject {
     /// welcome flow.
     func startEnabledFeatures() {
         if colorTemperatureEnabled { colorTemperature.start() }
-        if scrollReverserEnabled { scrollReverser.start() }
+        scrollTap.reverserEnabled = scrollReverserEnabled
+        scrollTap.smoothingEnabled = smoothScrollingEnabled
         if rewritelyEnabled { rewritely.start() }
         if windowSwitcherEnabled { windowSwitcher.start() }
         if audioPriorityEnabled { audioPriority.start() }
@@ -246,7 +255,8 @@ final class AppState: ObservableObject {
     /// Tear down anything that mutates global system state. Called at quit.
     func shutdown() {
         colorTemperature.stop()
-        scrollReverser.stop()
+        scrollTap.reverserEnabled = false
+        scrollTap.smoothingEnabled = false
         rewritely.stop()
         windowSwitcher.stop()
         audioPriority.stop()
