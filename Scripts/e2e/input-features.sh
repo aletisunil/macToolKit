@@ -298,6 +298,18 @@ wheel v 3 1 0
 check "switched off from the menu, the wheel is raw again" "raw=1 precise=0" \
   "raw=$(fact raw) precise=$(fact precise)"
 
+# Switched on a second time, the display clock moves to a new display link
+# while an old one exists - the path a display change takes too. That once
+# crashed the app (main-actor code on the clock thread).
+APP_PID=$(pgrep -f "macToolKit Debug.app/Contents/MacOS")
+menu_toggle "Smooth Scrolling"
+wheel v 3 1 0
+check "switched on again, the app keeps running" "$APP_PID" \
+  "$(pgrep -f "macToolKit Debug.app/Contents/MacOS")"
+check "and a notch glides again: 3 lines of 40 pt in many small steps" "dy=120 raw=0 many=yes" \
+  "dy=$(fact dy) raw=$(fact raw) many=$( (( $(fact moves) >= 8 )) && echo yes || echo "no ($(fact moves))")"
+menu_toggle "Smooth Scrolling"
+
 python3 "$ROOT/Scripts/e2e/scrollstats.py" chart "$SVLOG" "$OUT/scroll-timeline.svg" \
   "One notch (3 lines)|smoothing off:$OFF_FROM:$OFF_TO|smoothing on:$ON_FROM:$ON_TO" \
   "Wheel turned back after 60 ms|3 lines down, then 3 up:$FLIP_FROM:$FLIP_TO" \

@@ -393,7 +393,11 @@ private final class DisplayClock: NSObject, @unchecked Sendable {
         lock.withLock { handler }?(link.timestamp)
     }
 
-    private func perform(_ block: @escaping () -> Void) {
+    /// Runs `block` on the clock thread. It must be `@Sendable`: a plain
+    /// closure formed in a `@MainActor` method (like `attach(to:)`) is
+    /// main-actor code, and Swift traps when it runs here - the app quit on
+    /// every second time Smooth Scrolling was turned on.
+    private func perform(_ block: @escaping @Sendable () -> Void) {
         guard let runLoop = lock.withLock({ runLoop }) else { return }
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue, block)
         CFRunLoopWakeUp(runLoop)
