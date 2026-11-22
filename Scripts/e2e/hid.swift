@@ -7,6 +7,7 @@
 //   hid trust                       Accessibility / event-posting access
 //   hid key <keycode> [cmd|opt|shift|ctrl ...]
 //   hid move <x> <y>                warp the pointer
+//   hid pointer                     where the pointer is: x y
 //   hid glide <x1> <y1> <x2> <y2>   real pointer motion in 20 steps
 //   hid keys <keycode>[+cmd]:d|u ...
 //                                   post key downs/ups in order, print the
@@ -135,6 +136,10 @@ case "key":
 
 case "move":
     post(.mouseMoved, at: CGPoint(x: number(2), y: number(3)))
+
+case "pointer":
+    let location = CGEvent(source: nil)?.location ?? .zero
+    print(Int(location.x.rounded()), Int(location.y.rounded()))
 
 case "glide":
     let (x1, y1, x2, y2) = (number(2), number(3), number(4), number(5))

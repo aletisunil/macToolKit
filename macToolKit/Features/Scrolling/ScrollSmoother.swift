@@ -42,10 +42,20 @@ enum ScrollSmoothness: String, CaseIterable, Identifiable, Sendable {
 ///   before; AppKit apps (10 pt per line) scroll farther than before.
 /// - Apps that count lines rather than points get one line per 40 pt
 ///   posted, so at 1× they see exactly the lines of the notch.
+/// - A glide finishes where its notch was aimed, wherever the pointer goes
+///   meanwhile - in that window and that scroll area. The first frame after
+///   a notch is posted at the session level, so the window server routes it
+///   to what is under the pointer, as it would the notch itself. A listening
+///   tap at the annotated-session level, where events have been routed to
+///   their app, keeps a copy of it (`capture(_:)`). The frames after it are
+///   copies of that routed event posted at that level: they reach the same
+///   window without going through routing again. Posting at the session
+///   level with the notch's location instead would move the pointer there,
+///   and posting to the app's process does not scroll at all.
 ///
 /// Threading: `handle(_:)` runs on the tap thread, `tick(_:)` on the display
-/// clock's thread. State is shared under a mutex; the event is posted
-/// outside it.
+/// clock's thread, `capture(_:)` on the routing tap's thread. State is shared
+/// under mutexes; events are posted outside them.
 final class ScrollSmoother: Sendable {
     struct Config: Sendable {
         var enabled = false
@@ -75,8 +85,9 @@ final class ScrollSmoother: Sendable {
         var lineCarryY = 0.0
         /// The window being scrolled. A glide never moves on to another one.
         var window: CGWindowID?
-        /// Pointer location at the last window check.
-        var pointer = CGPoint.zero
+        /// A notch came in since the last frame: the next frame goes through
+        /// routing again, to where that notch was aimed.
+        var reroute = false
         var lastTick: CFTimeInterval = 0
         /// The clock is ticking for this glide.
         var running = false
@@ -108,6 +119,8 @@ final class ScrollSmoother: Sendable {
 
     private let config = Mutex(Config())
     private let glide = Mutex(Glide())
+    /// The glide's latest frame as routed to its app (see `capture(_:)`).
+    private let routed = Mutex<RoutedEvent?>(nil)
     /// Window id -> owning app's bundle id, for the exception list. Window ids
     /// are not reused within a login session, so entries never go stale.
     private let owners = Mutex([CGWindowID: String]())
@@ -137,6 +150,24 @@ final class ScrollSmoother: Sendable {
     /// Drops the rest of the current glide.
     func cancel() {
         glide.withLock { $0.clear() }
+    }
+
+    // MARK: Routing tap thread
+
+    /// Called by a listen-only tap at the annotated-session level for every
+    /// scroll event. Keeps the glide's first frame after a notch as routed
+    /// to its app, to aim the frames after it.
+    func capture(_ event: CGEvent) {
+        guard event.getIntegerValueField(.eventSourceUserData) == Self.marker else { return }
+        let window = CGWindowID(truncatingIfNeeded:
+            event.getIntegerValueField(Self.routedWindowField))
+        guard window != 0 else { return }
+        // Only the first one: later frames are copies of it anyway.
+        routed.withLock { routed in
+            if routed == nil, let copy = event.copy() {
+                routed = RoutedEvent(event: copy, window: window)
+            }
+        }
     }
 
     // MARK: Tap thread
@@ -180,7 +211,7 @@ final class ScrollSmoother: Sendable {
         let start: Start = glide.withLock { glide in
             if glide.window != window { glide.clear() }
             glide.window = window
-            glide.pointer = location
+            glide.reroute = true
             glide.remainingY = Self.add(linesY * scale, to: glide.remainingY)
             glide.remainingX = Self.add(linesX * scale, to: glide.remainingX)
             if !glide.running {
@@ -245,41 +276,56 @@ final class ScrollSmoother: Sendable {
         PrivateCGS.windowID(at: point) ?? WindowHitTest.window(at: point)?.windowID
     }
 
+    private static func pointerWindow() -> CGWindowID? {
+        CGEvent(source: nil).flatMap { windowID(at: $0.location) }
+    }
+
+    /// The window an event was routed to, set by the window server by the
+    /// time the event reaches the annotated-session level. Not in the SDK's
+    /// list of fields; 0 before routing.
+    private static let routedWindowField = CGEventField(rawValue: 51)!
+
     // MARK: Clock thread
 
     private func tick(_ time: CFTimeInterval) {
         let timeConstant = config.withLock { $0.smoothness.timeConstant }
 
-        // The pointer moved on to another window: the rest of the glide
-        // would scroll that one, which the person never aimed at.
-        var leftWindow = false
-        if let pointer = CGEvent(source: nil)?.location {
-            let (moved, window) = glide.withLock { glide in
-                (hypot(pointer.x - glide.pointer.x, pointer.y - glide.pointer.y) > 2,
-                 glide.window)
-            }
-            if moved {
-                leftWindow = Self.windowID(at: pointer) != window
-                glide.withLock { $0.pointer = pointer }
-            }
-        }
-
-        let (x, y, lines, finished) = glide.withLock { glide in
-            if leftWindow { glide.clear() }
+        let (x, y, lines, window, reroute, finished) = glide.withLock { glide in
             let dt = min(max(time - glide.lastTick, 0), 0.05)
             glide.lastTick = time
             let fraction = 1 - exp(-dt / timeConstant)
             let y = Self.step(&glide.remainingY, &glide.carryY, fraction)
             let x = Self.step(&glide.remainingX, &glide.carryX, fraction)
             let lines = glide.lines(x: x, y: y)
+            // Used up only by a frame that is posted: a first frame too short
+            // to move a whole point must not leave the next one unrouted.
+            let reroute = glide.reroute && (x != 0 || y != 0)
+            if reroute { glide.reroute = false }
             if glide.isFinished {
                 glide.clear()
                 glide.running = false
-                return (x, y, lines, true)
+                return (x, y, lines, glide.window, reroute, true)
             }
-            return (x, y, lines, false)
+            return (x, y, lines, glide.window, reroute, false)
         }
-        if x != 0 || y != 0 { Self.post(x: x, y: y, linesX: lines.x, linesY: lines.y) }
+        if x != 0 || y != 0 {
+            if reroute {
+                // Right after a notch the pointer is still where it was aimed.
+                routed.withLock { $0 = nil }
+                Self.post(x: x, y: y, linesX: lines.x, linesY: lines.y)
+            } else if let routed = routed.withLock({ $0 }), routed.window == window {
+                Self.post(x: x, y: y, linesX: lines.x, linesY: lines.y, like: routed.event)
+            } else if Self.pointerWindow() == window {
+                // The routed copy has not come back yet (or the routing tap
+                // is not running); the pointer is still on the window.
+                Self.post(x: x, y: y, linesX: lines.x, linesY: lines.y)
+            } else {
+                // The pointer left before there was a copy to aim with.
+                // Posted here, the rest would scroll the window now under
+                // the pointer, which the person never aimed at.
+                cancel()
+            }
+        }
         // A notch landing between the unlock above and this pause sets
         // `running` and queues a resume, which the clock runs after this
         // tick - so the pause can never strand it.
@@ -299,10 +345,29 @@ final class ScrollSmoother: Sendable {
         return Int32(whole)
     }
 
+    /// A frame posted at the session level: routed to the window under the
+    /// pointer, like the notch itself. A sourceless event carries the
+    /// current pointer location.
     private static func post(x: Int32, y: Int32, linesX: Int32, linesY: Int32) {
         guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
                                   wheelCount: 2, wheel1: y, wheel2: x, wheel3: 0)
         else { return }
+        fill(event, x: x, y: y, linesX: linesX, linesY: linesY)
+        event.post(tap: .cgSessionEventTap)
+    }
+
+    /// A frame posted as a copy of an earlier one already routed to its app:
+    /// it goes to the same window and spot, wherever the pointer is now.
+    private static func post(x: Int32, y: Int32, linesX: Int32, linesY: Int32,
+                             like routed: CGEvent) {
+        guard let event = routed.copy() else { return }
+        event.timestamp = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        fill(event, x: x, y: y, linesX: linesX, linesY: linesY)
+        event.post(tap: .cgAnnotatedSessionEventTap)
+    }
+
+    private static func fill(_ event: CGEvent, x: Int32, y: Int32,
+                             linesX: Int32, linesY: Int32) {
         // Left alone, a pixel event claims at least one line whenever it
         // moves at all, so an app that counts lines - Terminal turning the
         // wheel into reports for tmux or vim, games, Carbon and Java apps -
@@ -316,9 +381,6 @@ final class ScrollSmoother: Sendable {
                  .scrollWheelEventFixedPtDeltaAxis2, .scrollWheelEventPointDeltaAxis2)
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         event.setIntegerValueField(.eventSourceUserData, value: marker)
-        // A sourceless event carries the current pointer location, which
-        // routes it to the window under the pointer, like the notch itself.
-        event.post(tap: .cgSessionEventTap)
     }
 
     private static func setLines(_ event: CGEvent, _ lines: Int32, _ points: Int32,
@@ -327,6 +389,19 @@ final class ScrollSmoother: Sendable {
         event.setIntegerValueField(whole, value: Int64(lines))
         event.setIntegerValueField(point, value: Int64(points))
         event.setDoubleValueField(fixed, value: Double(lines))
+    }
+}
+
+/// A glide frame as the window server routed it. Never changed after
+/// capture - frames are posted as copies of it - so sharing it across
+/// threads is safe.
+private final class RoutedEvent: @unchecked Sendable {
+    let event: CGEvent
+    let window: CGWindowID
+
+    init(event: CGEvent, window: CGWindowID) {
+        self.event = event
+        self.window = window
     }
 }
 

@@ -255,12 +255,63 @@ check "⇧ + wheel reaches the app raw and still scrolls sideways" "raw=1 dx=30 
   "raw=$(fact raw) dx=$(fact dx) dy=$(fact dy)"
 check "trackpad scroll is still left alone with smoothing on" "1" "$($HID scroll trackpad)"
 
-# The pointer moves to another window mid-scroll: the rest of the scroll must
-# not land there, and must stop in the window it left.
-LEAVE_FROM=$(mark); $HID wheel v 10 1 0; sleep 0.06; $HID move $((VX + 370)) $((VY + 250)); sleep 1.2
-FACTS=$(sv_stats $LEAVE_FROM); $HID move $SVX $SVY; sleep 0.3
-check "moving the pointer to another window stops the scroll there" yes \
-  "$( (( $(fact dy) > 0 && $(fact dy) < 400 )) && echo yes || echo "no (dy $(fact dy) of 400)")"
+# A glide finishes where its notch was aimed. A second ScrollView, with a log
+# of its own, is the other window the pointer moves to.
+SV2LOG=$WORK/scrollview2.log
+open -n "$SVAPP" --args "$SV2LOG"; sleep 2
+SV2PID=$(pgrep -f "ScrollView.app/Contents/MacOS/ScrollView $SV2LOG")
+sv2_place() {
+  osascript -e "tell application \"System Events\" to tell (first process whose unix id is $SV2PID)" \
+    -e "set position of window 1 to {$1, $2}" -e "set size of window 1 to {$3, 500}" -e 'end tell'
+}
+sv2_mark() { wc -l < "$SV2LOG" | tr -d ' '; }
+sv2_dy() { python3 "$ROOT/Scripts/e2e/scrollstats.py" stats "$SV2LOG" "$1" | tr ' ' '\n' | sed -n 's/^dy=//p'; }
+# Side by side: SV2 on the left, clear of SV.
+sv2_place $((VX + 40)) $((VY + 40)) 600
+SV2X=$((VX + 340)); SV2Y=$((VY + 290))
+$HID click $SVX $SVY; sleep 0.4
+
+# The pointer moves on to the other window mid-scroll: the rest of the
+# scroll still lands in the window it was aimed at, all of it, and none of
+# it in the window now under the pointer. The pointer stays where it was
+# moved: a scroll event posted with a location of its own would move it back.
+FROM=$(mark); FROM2=$(sv2_mark)
+$HID wheel v 10 1 0; sleep 0.06; $HID move $SV2X $SV2Y; sleep 0.1
+POINTER_MID=$($HID pointer); sleep 1.1
+LEAVE_FROM=$FROM; LEAVE_TO=$(mark)
+FACTS=$(sv_stats $FROM)
+check "moving the pointer away mid-scroll: the scroll still finishes where it started" \
+  "dy=400 other=0" "dy=$(fact dy) other=$(sv2_dy $FROM2)"
+check "and the pointer stays where it went, during and after" "$SV2X $SV2Y $SV2X $SV2Y" \
+  "$POINTER_MID $($HID pointer)"
+
+# A notch over the other window starts a scroll of its own there, which gets
+# exactly its own distance; what was left of the first one stops. (A wheel
+# event takes the pointer location the window server has by then, and a
+# posted move takes a moment to land - hence the pause after it.)
+$HID move $SVX $SVY; sleep 0.3
+FROM=$(mark); FROM2=$(sv2_mark)
+$HID wheel v 10 1 0; sleep 0.04; $HID move $SV2X $SV2Y; sleep 0.04; $HID wheel v 3 1 0; sleep 1.2
+FACTS=$(sv_stats $FROM)
+check "a notch over another window mid-scroll scrolls that one by its own 3 lines only" \
+  "other=120 first-stopped=yes" "other=$(sv2_dy $FROM2) first-stopped=$( (( $(fact dy) > 0 && \
+  $(fact dy) < 400 )) && echo yes || echo "no (dy $(fact dy) of 400)")"
+
+# Another window comes up over the spot the scroll was aimed at: the scroll
+# still finishes in the window it was aimed at, and the window on top gets
+# none of it. SV2 reaches under SV's middle; clicking its uncovered part
+# brings it to the front, over that spot.
+sv2_place $((VX + 400)) $((VY + 40)) 700
+$HID click $((VX + 1200)) $SVY; sleep 0.4; $HID move $SVX $SVY; sleep 0.3
+FROM=$(mark); FROM2=$(sv2_mark)
+$HID wheel v 10 1 0; sleep 0.06; $HID click $((VX + 550)) $SVY; sleep 1.2
+FACTS=$(sv_stats $FROM)
+check "a window raised over the scrolled spot: the scroll still finishes underneath it" \
+  "dy=400 other=0" "dy=$(fact dy) other=$(sv2_dy $FROM2)"
+
+kill $SV2PID 2>/dev/null; sleep 0.3
+osascript -e "tell application id \"$SVID\" to activate"; sleep 0.5
+$HID move $SVX $SVY; sleep 0.3
 
 SPIN_FROM=$(mark); wheel v 1 60 4; SPIN_TO=$(mark)
 check "a fast free-spin (60 events in 240 ms) scrolls exactly 60 lines" "dy=2400 raw=0" \
@@ -313,7 +364,8 @@ menu_toggle "Smooth Scrolling"
 python3 "$ROOT/Scripts/e2e/scrollstats.py" chart "$SVLOG" "$OUT/scroll-timeline.svg" \
   "One notch (3 lines)|smoothing off:$OFF_FROM:$OFF_TO|smoothing on:$ON_FROM:$ON_TO" \
   "Wheel turned back after 60 ms|3 lines down, then 3 up:$FLIP_FROM:$FLIP_TO" \
-  "Free spin: 60 notches in 240 ms|smoothing on:$SPIN_FROM:$SPIN_TO"
+  "Free spin: 60 notches in 240 ms|smoothing on:$SPIN_FROM:$SPIN_TO" \
+  "10 lines, pointer moves to another window after 60 ms|the window scrolled:$LEAVE_FROM:$LEAVE_TO"
 echo "- Timeline: \`scroll-timeline.svg\` (points in \`scroll-timeline.csv\`)" >> "$REPORT"
 
 # MARK: Side Buttons

@@ -172,6 +172,13 @@ selects to the start of the field so text after the trigger is preserved.
   add its own momentum, so the distance would no longer be exact. Modifier +
   wheel passes through raw - AppKit only turns ⇧ + wheel sideways for
   line-based events.
+- A glide finishes in the window and scroll area its notch was aimed at,
+  wherever the pointer goes meanwhile. The first frame after a notch is
+  posted at the session level and routed like any scroll; a listen-only
+  tap at the annotated-session level keeps that routed copy (it carries the
+  target window in field 51), and the frames after it are copies posted at
+  that level, which skips routing. Setting a session event's location
+  instead moves the pointer there; `postToPid` scrolls nothing.
 - "Which window is under the pointer" is the window server's hit test
   (`SLSFindWindowAndOwner`, `Support/WindowHitTest.swift`), not a walk of
   `CGWindowListCopyWindowInfo`: the Dock keeps a transparent, screen-sized

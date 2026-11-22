@@ -9,6 +9,10 @@ import Synchronization
 /// window server, and a reversed glide could come out reversed twice or not
 /// at all. The tap runs while either feature is on. Requires Accessibility
 /// permission.
+///
+/// Smooth Scrolling adds a second, listen-only tap late in the pipeline,
+/// where events have been routed to their app: it lets a glide stay on the
+/// window it started in (see `ScrollSmoother`).
 @MainActor
 final class ScrollTap: ObservableObject {
     // MARK: Scroll Reverser
@@ -83,6 +87,7 @@ final class ScrollTap: ObservableObject {
     private let reversal: ScrollReversal
     private let smoother: ScrollSmoother
     private let tap: EventTap
+    private let routingTap: EventTap
     private var subscriptions: Set<AnyCancellable> = []
 
     init() {
@@ -111,6 +116,13 @@ final class ScrollTap: ObservableObject {
         tap = EventTap(name: "ScrollTap", events: [.scrollWheel]) { _, event in
             reversal.apply(to: event)
             return smoother.handle(event)
+        }
+        routingTap = EventTap(name: "ScrollRoutingTap", events: [.scrollWheel],
+                              location: .cgAnnotatedSessionEventTap,
+                              place: .tailAppendEventTap,
+                              options: .listenOnly) { _, event in
+            smoother.capture(event)
+            return true
         }
         reversal.update(reversalConfig)
         smoother.update(smootherConfig)
@@ -152,6 +164,11 @@ final class ScrollTap: ObservableObject {
             tap.start()
         } else {
             tap.stop()
+        }
+        if smoothingEnabled {
+            routingTap.start()
+        } else {
+            routingTap.stop()
         }
     }
 

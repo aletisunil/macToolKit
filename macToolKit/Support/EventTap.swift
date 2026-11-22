@@ -16,6 +16,9 @@ import CoreGraphics
 /// The handler runs on the tap thread for every event in the mask. It mutates
 /// the event in place to change it and returns false to swallow it. It must
 /// be fast; anything slow belongs on another queue.
+///
+/// Taps sit at the HID level, ahead of other apps' taps, unless told
+/// otherwise.
 @MainActor
 final class EventTap: ObservableObject {
     typealias Handler = @Sendable (CGEventType, CGEvent) -> Bool
@@ -26,6 +29,8 @@ final class EventTap: ObservableObject {
 
     private let name: String
     private let mask: CGEventMask
+    private let location: CGEventTapLocation
+    private let place: CGEventTapPlacement
     private let options: CGEventTapOptions
     private let handler: Handler
 
@@ -35,9 +40,13 @@ final class EventTap: ObservableObject {
     private var permissionPoll: Timer?
 
     init(name: String, events: [CGEventType],
+         location: CGEventTapLocation = .cghidEventTap,
+         place: CGEventTapPlacement = .headInsertEventTap,
          options: CGEventTapOptions = .defaultTap, handler: @escaping Handler) {
         self.name = name
         self.mask = events.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
+        self.location = location
+        self.place = place
         self.options = options
         self.handler = handler
     }
@@ -80,7 +89,8 @@ final class EventTap: ObservableObject {
         guard core == nil else { return }
         let core = EventTapCore(handler: handler)
         self.core = core
-        core.start(name: name, mask: mask, options: options) { [weak self] ok in
+        core.start(name: name, mask: mask, location: location, place: place,
+                   options: options) { [weak self] ok in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.core === core else { return }
@@ -121,12 +131,13 @@ private final class EventTapCore: @unchecked Sendable {
         self.handler = handler
     }
 
-    func start(name: String, mask: CGEventMask, options: CGEventTapOptions,
+    func start(name: String, mask: CGEventMask, location: CGEventTapLocation,
+               place: CGEventTapPlacement, options: CGEventTapOptions,
                completion: @escaping @Sendable (Bool) -> Void) {
         let thread = Thread { [self] in
             guard let tap = CGEvent.tapCreate(
-                tap: .cghidEventTap,
-                place: .headInsertEventTap,
+                tap: location,
+                place: place,
                 options: options,
                 eventsOfInterest: mask,
                 callback: eventTapCallback,
