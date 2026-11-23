@@ -156,12 +156,19 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(button("Quit macToolKit", #selector(quit), key: "q"))
     }
 
+    private static let setImageVisibility = NSSelectorFromString("setPreferredImageVisibility:")
+
     private func button(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         // macOS 27 picks a symbol for some well-known titles (a gear for
-        // Settings…); one lone icon would push its title out of line.
-        if #available(macOS 27, *) { item.preferredImageVisibility = .hidden }
+        // Settings…); one lone icon would push its title out of line. The
+        // switch, `preferredImageVisibility`, is new in the macOS 27 SDK and
+        // releases build with Xcode 26 (CI), so it is set by name; 2 is
+        // `.hidden`. Older systems have no such property and no symbols.
+        if item.responds(to: Self.setImageVisibility) {
+            item.setValue(2, forKey: "preferredImageVisibility")
+        }
         return item
     }
 
