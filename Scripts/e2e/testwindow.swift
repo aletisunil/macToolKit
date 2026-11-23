@@ -5,6 +5,12 @@
 //
 // input-features.sh builds it into TestWindow.app (bundle id
 // com.sunilaleti.e2e.testwindow).
+//
+// With --slow-activation (open … --args --slow-activation) the main thread
+// is busy for 0.4 s each time the app becomes active, so its window is
+// raised well after the system announces the activation, and its AX
+// requests time out meanwhile. cmux raises its window late in the same way
+// (switcher-selection.sh).
 import AppKit
 
 final class Delegate: NSObject, NSApplicationDelegate {
@@ -18,6 +24,10 @@ final class Delegate: NSObject, NSApplicationDelegate {
         window.contentMaxSize = NSSize(width: 900, height: 600)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    func applicationWillBecomeActive(_ notification: Notification) {
+        if CommandLine.arguments.contains("--slow-activation") { usleep(400_000) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

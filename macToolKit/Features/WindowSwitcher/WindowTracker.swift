@@ -41,6 +41,7 @@ final class WindowTracker: ObservableObject {
     private var ghostCandidateIDs: Set<CGWindowID> = []
     private var observers: [NSObjectProtocol] = []
     private var refreshInFlight = false
+    private var activationRefresh: Task<Void, Never>?
     private var refreshQueued = false
     /// Bumped by `stop()` so a snapshot still running in the background can't
     /// repopulate the list after the feature was turned off.
@@ -67,6 +68,7 @@ final class WindowTracker: ObservableObject {
                     let tracker = AppState.shared.windowSwitcher.tracker
                     if let activatedPID {
                         tracker.noteActivated(activatedPID)
+                        tracker.refreshAfterActivation()
                     }
                     tracker.refresh()
                 }
@@ -84,6 +86,8 @@ final class WindowTracker: ObservableObject {
         let center = NSWorkspace.shared.notificationCenter
         observers.forEach(center.removeObserver)
         observers.removeAll()
+        activationRefresh?.cancel()
+        activationRefresh = nil
         windows = []
         runGeneration += 1
         refreshInFlight = false
@@ -93,6 +97,21 @@ final class WindowTracker: ObservableObject {
     private func noteActivated(_ pid: pid_t) {
         appMRU.removeAll { $0 == pid }
         appMRU.insert(pid, at: 0)
+    }
+
+    /// The snapshot taken on an activation often comes too early: the app
+    /// raises its window only when its main thread gets to the activation,
+    /// and while that thread is busy its AX pass times out and its windows
+    /// are left out. One more snapshot a moment later catches up, so the
+    /// next switcher invocation renders the right list from the cache.
+    private func refreshAfterActivation() {
+        activationRefresh?.cancel()
+        let generation = runGeneration
+        activationRefresh = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self, !Task.isCancelled, self.runGeneration == generation else { return }
+            self.refresh()
+        }
     }
 
     /// Rebuilds the window list on a background task. Coalesces: one refresh
@@ -132,7 +151,9 @@ final class WindowTracker: ObservableObject {
             await MainActor.run {
                 // Dropped on the floor if the feature was stopped meanwhile.
                 guard self.runGeneration == generation else { return }
-                self.windows = snapshot
+                // The snapshot read the z-order before its AX pass; an app
+                // raised meanwhile would be out of place.
+                self.windows = Self.inLiveZOrder(snapshot)
                 self.ghostIDs = ghosts.confirmed
                 self.ghostCandidateIDs = ghosts.candidates
                 self.refreshInFlight = false
@@ -141,6 +162,52 @@ final class WindowTracker: ObservableObject {
                     self.refresh()
                 }
             }
+        }
+    }
+
+    /// Re-sorts the cached list to the current front-to-back order, without
+    /// an AX pass. The switcher calls this when it opens, so index 0 is the
+    /// current window and index 1 the previous one, even before a fresh
+    /// snapshot lands: an app's activation notification can arrive before
+    /// its window is raised, and the snapshot taken then keeps the old
+    /// front-to-back order.
+    func syncZOrder() {
+        let sorted = Self.inLiveZOrder(windows)
+        if sorted.map(\.id) != windows.map(\.id) {
+            windows = sorted
+        }
+    }
+
+    /// On-screen windows first, in the window server's current z-order, then
+    /// the rest (minimized, hidden, other Spaces, or closed meanwhile) in
+    /// their snapshot order. The frontmost app's top on-screen window goes
+    /// first even when the window server still has it lower down: a busy app
+    /// raises its window only when its main thread gets to the activation,
+    /// which can be a good part of a second after it became frontmost, and
+    /// nothing tells the tracker when that happens.
+    private static func inLiveZOrder(_ windows: [WindowInfo]) -> [WindowInfo] {
+        var rank: [CGWindowID: Int] = [:]
+        for (index, id) in onScreenOrder().enumerated() where rank[id] == nil {
+            rank[id] = index
+        }
+        var onScreen = windows.filter { rank[$0.id] != nil }
+            .sorted { rank[$0.id]! < rank[$1.id]! }
+        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+           let index = onScreen.firstIndex(where: { $0.pid == pid }), index > 0 {
+            onScreen.insert(onScreen.remove(at: index), at: 0)
+        }
+        return onScreen + windows.filter { rank[$0.id] == nil }
+    }
+
+    /// Front-to-back ids of the normal-layer (0) windows on screen now.
+    private nonisolated static func onScreenOrder() -> [CGWindowID] {
+        guard let list = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return [] }
+        return list.compactMap { entry in
+            guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0
+            else { return nil }
+            return entry[kCGWindowNumber as String] as? CGWindowID
         }
     }
 
@@ -178,16 +245,7 @@ final class WindowTracker: ObservableObject {
         let appsByPID = Dictionary(uniqueKeysWithValues: apps.map { ($0.pid, $0) })
 
         // Z-ordered (front to back) IDs of normal-layer on-screen windows.
-        var onScreenOrder: [CGWindowID] = []
-        if let list = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
-            for entry in list {
-                guard let layer = entry[kCGWindowLayer as String] as? Int, layer == 0,
-                      let number = entry[kCGWindowNumber as String] as? CGWindowID
-                else { continue }
-                onScreenOrder.append(number)
-            }
-        }
+        let onScreenOrder = Self.onScreenOrder()
         let onScreenIDs = Set(onScreenOrder)
 
         // AX pass per app: titles, minimized/hidden/fullscreen state and the

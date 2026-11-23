@@ -149,6 +149,13 @@ final class WindowSwitcherController: ObservableObject {
     /// target with whatever tile happens to be under the pointer.
     private var mouseAnchor: CGPoint?
     private static let hoverSlop: CGFloat = 6
+    /// Whether the chord was reversed, and whether the selection is still
+    /// where it opened (`startIndex`). Until the user moves it, the selection
+    /// means "the previous window", not one window id: a fresh snapshot that
+    /// reorders the list puts it back on `startIndex` instead of following
+    /// the window.
+    private var startsReversed = false
+    private var selectionAtStart = false
 
     init() {
         defaults.register(defaults: [
@@ -293,7 +300,7 @@ final class WindowSwitcherController: ObservableObject {
         case .cycle(let delta):
             guard shown, !visibleWindows.isEmpty else { return }
             let count = visibleWindows.count
-            selection = ((selection + delta) % count + count) % count
+            select(((selection + delta) % count + count) % count)
         case .commit:
             guard shown else { return }
             commit()
@@ -307,6 +314,10 @@ final class WindowSwitcherController: ObservableObject {
 
     private func show(slotIndex: Int, reverse: Bool) {
         tracker.refresh() // fresh snapshot streams in while we render the cache
+        // The cache can predate the last app switch's window raise; index 1
+        // must be the previous window even if the user commits before the
+        // fresh snapshot lands.
+        tracker.syncZOrder()
         activeSlot = shortcuts.slots.indices.contains(slotIndex)
             ? shortcuts.slots[slotIndex] : ShortcutSlot()
         activeStyle = activeSlot.style
@@ -318,9 +329,9 @@ final class WindowSwitcherController: ObservableObject {
             tap.switcherVisible = false
             return
         }
-        // Index 0 is the frontmost window; alt-tab semantics start on the
-        // previous one.
-        selection = reverse ? visibleWindows.count - 1 : min(1, visibleWindows.count - 1)
+        startsReversed = reverse
+        selectionAtStart = true
+        selection = startIndex
         shown = true
         showGeneration += 1
         let generation = showGeneration
@@ -336,6 +347,27 @@ final class WindowSwitcherController: ObservableObject {
         } else {
             revealPanel()
         }
+    }
+
+    /// Index 0 is the current window, so alt-tab semantics start on index 1.
+    /// But when the frontmost app has no visible window in the list (it has
+    /// none, it is blacklisted, or it is busy and the snapshot could not read
+    /// it yet), every tile is an earlier window and the first is the
+    /// previous one.
+    private var startIndex: Int {
+        let last = max(0, visibleWindows.count - 1)
+        if startsReversed { return last }
+        let listsCurrent = visibleWindows.first.map {
+            $0.pid == frontmostPID && $0.isOnActiveSpace && !$0.isMinimized && !$0.isHidden
+        } ?? false
+        return min(listsCurrent ? 1 : 0, last)
+    }
+
+    /// A selection the user made (Tab, hover, click). From here on the
+    /// selection follows that window through list updates.
+    func select(_ index: Int) {
+        selectionAtStart = false
+        selection = index
     }
 
     /// Whether a hover should be allowed to move the selection. False until
@@ -410,6 +442,7 @@ final class WindowSwitcherController: ObservableObject {
         case .hide: window.hideApp()
         case .quit: window.quitApp()
         }
+        selectionAtStart = false
         // AX side effects land asynchronously in the target app.
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -431,7 +464,8 @@ final class WindowSwitcherController: ObservableObject {
         guard shown else { return }
         let before = visibleWindows.map(\.id)
         baseWindows = windows
-        applyFilters(keepSelection: true)
+        applyFilters(keepSelection: !selectionAtStart)
+        if selectionAtStart { selection = startIndex }
         guard !visibleWindows.isEmpty else {
             hideSwitcher()
             return

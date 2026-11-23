@@ -6,6 +6,10 @@
 //
 //   hid trust                       Accessibility / event-posting access
 //   hid key <keycode> [cmd|opt|shift|ctrl ...]
+//   hid flags [cmd|opt|shift|ctrl]  a modifier press (flagsChanged); no
+//                                   modifier = release
+//   hid switcher <process>          the process's switcher tiles in order,
+//                                   "*" before the selected one, or "closed"
 //   hid move <x> <y>                warp the pointer
 //   hid pointer                     where the pointer is: x y
 //   hid glide <x1> <y1> <x2> <y2>   real pointer motion in 20 steps
@@ -158,6 +162,43 @@ case "key":
         event.flags = flags
         event.post(tap: .cghidEventTap)
         usleep(20_000)
+    }
+
+case "flags":
+    // A modifier press or release on its own (flagsChanged), the way the
+    // keyboard sends it: hold Cmd for the switcher, release it to commit.
+    let flags = modifierFlags(args.dropFirst(2))
+    let keycode: CGKeyCode = flags.contains(.maskCommand) ? 55
+        : flags.contains(.maskAlternate) ? 58 : flags.contains(.maskShift) ? 56
+        : flags.contains(.maskControl) ? 59 : 55
+    guard let event = CGEvent(keyboardEventSource: CGEventSource(stateID: .hidSystemState),
+                              virtualKey: keycode, keyDown: !flags.isEmpty)
+    else { fail("cannot create flags event") }
+    event.type = .flagsChanged
+    event.flags = flags
+    event.post(tap: .cghidEventTap)
+
+case "switcher":
+    // The switcher panel's tiles in order, one per line: "index label", with
+    // a "*" before the selected one. "closed" when no panel is on screen.
+    // Each tile is one accessibility element with its children hidden, so
+    // tiles are the leaves that carry a description.
+    func tiles(_ element: AXUIElement, _ found: inout [AXUIElement]) {
+        let kids = children(of: element)
+        if kids.isEmpty,
+           (attribute(element, kAXDescriptionAttribute) as? String)?.isEmpty == false {
+            found.append(element)
+        }
+        for child in kids { tiles(child, &found) }
+    }
+    let windows = attribute(process(named: args[2]), kAXWindowsAttribute) as? [AXUIElement] ?? []
+    var found: [AXUIElement] = []
+    for window in windows { tiles(window, &found) }
+    if found.isEmpty { print("closed") }
+    for (index, tile) in found.enumerated() {
+        let selected = attribute(tile, kAXSelectedAttribute) as? Bool ?? false
+        let label = attribute(tile, kAXDescriptionAttribute) as? String ?? "?"
+        print("\(selected ? "*" : " ")\(index) \(label)")
     }
 
 case "move":
