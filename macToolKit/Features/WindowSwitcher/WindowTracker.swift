@@ -39,6 +39,11 @@ final class WindowTracker: ObservableObject {
     /// -switch, an app's AX pass timing out), so suppression needs two
     /// consecutive sightings.
     private var ghostCandidateIDs: Set<CGWindowID> = []
+    /// CG window ids of helper windows an app lists in AX but never shows
+    /// (see `AXWindow.isNeverShown`). Carried across refreshes: a helper is
+    /// only detectable while its app is visible. Once the app is hidden,
+    /// all its windows are off screen, and this record keeps the helper out.
+    private var neverShownIDs: Set<CGWindowID> = []
     private var observers: [NSObjectProtocol] = []
     private var refreshInFlight = false
     private var activationRefresh: Task<Void, Never>?
@@ -144,7 +149,8 @@ final class WindowTracker: ObservableObject {
                               includeFullscreen: includeFullscreen,
                               appMRU: appMRU,
                               knownGhosts: ghostIDs,
-                              knownGhostCandidates: ghostCandidateIDs)
+                              knownGhostCandidates: ghostCandidateIDs,
+                              knownNeverShown: neverShownIDs)
 
         Task.detached(priority: .userInitiated) {
             let (snapshot, ghosts) = WindowTracker.snapshot(apps: apps, options: options)
@@ -156,6 +162,7 @@ final class WindowTracker: ObservableObject {
                 self.windows = Self.inLiveZOrder(snapshot)
                 self.ghostIDs = ghosts.confirmed
                 self.ghostCandidateIDs = ghosts.candidates
+                self.neverShownIDs = ghosts.neverShown
                 self.refreshInFlight = false
                 if self.refreshQueued {
                     self.refreshQueued = false
@@ -228,14 +235,17 @@ final class WindowTracker: ObservableObject {
         let appMRU: [pid_t]
         let knownGhosts: Set<CGWindowID>
         let knownGhostCandidates: Set<CGWindowID>
+        let knownNeverShown: Set<CGWindowID>
     }
 
     /// Ghost bookkeeping carried across refreshes: `confirmed` entries are
     /// suppressed from other-Space results, `candidates` await a second
-    /// sighting.
+    /// sighting, and `neverShown` helper windows are suppressed from the AX
+    /// pass.
     private struct GhostState: Sendable {
         var confirmed: Set<CGWindowID>
         var candidates: Set<CGWindowID>
+        var neverShown: Set<CGWindowID>
     }
 
     private nonisolated static func snapshot(
@@ -256,6 +266,8 @@ final class WindowTracker: ObservableObject {
         // leaves a fullscreen Space). One spaces() snapshot serves the whole
         // refresh so both passes agree on which Space is current.
         let spaces = PrivateCGS.spaces()
+        // Rebuilt from this pass only, so ids of closed windows drop off.
+        var neverShown = Set<CGWindowID>()
         var byID: [CGWindowID: WindowInfo] = [:]
         var offscreenByApp: [pid_t: [WindowInfo]] = [:]
         for app in apps {
@@ -266,6 +278,17 @@ final class WindowTracker: ObservableObject {
                 else { continue }
                 let isMinimized = AXWindow.isMinimized(window)
                 if isMinimized && !options.includeMinimized { continue }
+                // Ordered-out helper windows (cmux keeps one) would show up
+                // as a second tile for the app. While the app is hidden they
+                // look like its real windows, so only the record tells.
+                if app.isHidden
+                    ? options.knownNeverShown.contains(id)
+                    : AXWindow.isNeverShown(id, isOnScreen: onScreenIDs.contains(id),
+                                            isMinimized: isMinimized,
+                                            appHidden: false, spaces: spaces) {
+                    neverShown.insert(id)
+                    continue
+                }
                 let isFullscreen = AXWindow.isFullscreen(window)
                 if isFullscreen && !options.includeFullscreen { continue }
 
@@ -323,7 +346,8 @@ final class WindowTracker: ObservableObject {
         // Other-space windows: CGWindowList over all windows, classified by
         // Space via private CGS. Unavailable API → current-space fallback.
         var ghosts = GhostState(confirmed: options.knownGhosts,
-                                candidates: options.knownGhostCandidates)
+                                candidates: options.knownGhostCandidates,
+                                neverShown: neverShown)
         if options.includeOtherSpaces && PrivateCGS.available {
             result.append(contentsOf: otherSpaceWindows(
                 appsByPID: appsByPID, seen: seen,

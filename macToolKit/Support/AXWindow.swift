@@ -39,10 +39,57 @@ enum AXWindow {
     }
 
     /// Live count of the app's switchable windows (standard windows and
-    /// dialogs, including minimized ones). Used to decide whether closing a
-    /// window should instead quit its otherwise-windowless app.
+    /// dialogs, including minimized ones), without windows the app never
+    /// shows. Used to decide whether closing a window should instead quit
+    /// its otherwise-windowless app.
     static func switchableWindowCount(pid: pid_t) -> Int {
-        windows(of: appElement(for: pid)).filter(isSwitchable).count
+        reachableWindows(windows(of: appElement(for: pid)), pid: pid).count
+    }
+
+    /// The switchable windows among `windows` that the user can reach:
+    /// standard windows and dialogs, without the ones the app never shows.
+    static func reachableWindows(_ windows: [AXUIElement], pid: pid_t) -> [AXUIElement] {
+        let appHidden = NSRunningApplication(processIdentifier: pid)?.isHidden ?? false
+        let spaces = PrivateCGS.spaces()
+        // No window list, no filtering: counting a helper as a window only
+        // keeps an app running, which is the safe mistake.
+        let onScreen = onScreenWindowIDs()
+        return windows.filter { window in
+            guard isSwitchable(window) else { return false }
+            guard let onScreen, let id = windowID(of: window) else { return true }
+            return !isNeverShown(id, isOnScreen: onScreen.contains(id),
+                                 isMinimized: isMinimized(window),
+                                 appHidden: appHidden, spaces: spaces)
+        }
+    }
+
+    /// A window that AppKit lists in kAXWindows but that is not on screen,
+    /// although nothing hides it: it is not minimized, its app is not
+    /// hidden, and it is on the current Space (or on no Space at all). Such
+    /// a window is an ordered-out helper, such as the borderless 64x64
+    /// dialog that cmux keeps, and there is nothing to switch to. Windows on
+    /// other Spaces are off screen for a reason, so they never match.
+    /// Without the private Space API nothing matches.
+    static func isNeverShown(_ id: CGWindowID, isOnScreen: Bool, isMinimized: Bool,
+                             appHidden: Bool,
+                             spaces: [PrivateCGS.SpaceID: PrivateCGS.SpaceInfo]) -> Bool {
+        guard PrivateCGS.available, !spaces.isEmpty,
+              !isOnScreen, !isMinimized, !appHidden
+        else { return false }
+        let ids = PrivateCGS.spaceIDs(of: id)
+        return ids.isEmpty || ids.contains { spaces[$0]?.isCurrent == true }
+    }
+
+    /// Ids of every window the window server shows right now. (Not
+    /// CGWindowListCreateDescriptionFromArray: it wants raw window-id values
+    /// in the array, and a Swift [CGWindowID] bridges to numbers, so it
+    /// silently finds nothing.) nil when the window server doesn't answer.
+    static func onScreenWindowIDs() -> Set<CGWindowID>? {
+        guard let list = CGWindowListCopyWindowInfo(
+                  [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                  as? [[String: Any]]
+        else { return nil }
+        return Set(list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
     }
 
     static func windowID(of window: AXUIElement) -> CGWindowID? {
