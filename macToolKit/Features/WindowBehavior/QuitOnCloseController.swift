@@ -146,7 +146,7 @@ final class QuitOnCloseController: ObservableObject {
     private static func remainingWindowCount(pid: pid_t) -> Int? {
         guard let windows = AXWindow.windowsIfAnswered(of: AXWindow.appElement(for: pid))
         else { return nil }
-        return AXWindow.reachableWindows(windows, pid: pid).count
+        return AXWindow.reachableWindows(windows).count
             + otherSpaceWindowCount(pid: pid)
     }
 

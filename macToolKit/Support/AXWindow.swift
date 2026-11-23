@@ -43,13 +43,12 @@ enum AXWindow {
     /// shows. Used to decide whether closing a window should instead quit
     /// its otherwise-windowless app.
     static func switchableWindowCount(pid: pid_t) -> Int {
-        reachableWindows(windows(of: appElement(for: pid)), pid: pid).count
+        reachableWindows(windows(of: appElement(for: pid))).count
     }
 
     /// The switchable windows among `windows` that the user can reach:
     /// standard windows and dialogs, without the ones the app never shows.
-    static func reachableWindows(_ windows: [AXUIElement], pid: pid_t) -> [AXUIElement] {
-        let appHidden = NSRunningApplication(processIdentifier: pid)?.isHidden ?? false
+    static func reachableWindows(_ windows: [AXUIElement]) -> [AXUIElement] {
         let spaces = PrivateCGS.spaces()
         // No window list, no filtering: counting a helper as a window only
         // keeps an app running, which is the safe mistake.
@@ -58,26 +57,23 @@ enum AXWindow {
             guard isSwitchable(window) else { return false }
             guard let onScreen, let id = windowID(of: window) else { return true }
             return !isNeverShown(id, isOnScreen: onScreen.contains(id),
-                                 isMinimized: isMinimized(window),
-                                 appHidden: appHidden, spaces: spaces)
+                                 isMinimized: isMinimized(window), spaces: spaces)
         }
     }
 
-    /// A window that AppKit lists in kAXWindows but that is not on screen,
-    /// although nothing hides it: it is not minimized, its app is not
-    /// hidden, and it is on the current Space (or on no Space at all). Such
-    /// a window is an ordered-out helper, such as the borderless 64x64
-    /// dialog that cmux keeps, and there is nothing to switch to. Windows on
-    /// other Spaces are off screen for a reason, so they never match.
-    /// Without the private Space API nothing matches.
+    /// A window that AppKit lists in kAXWindows but that is ordered out: not
+    /// on screen, not minimized, and on no Space at all. Such a window is a
+    /// helper, such as the borderless 64x64 dialog that cmux keeps, and
+    /// there is nothing to switch to. A real window always has a Space, also
+    /// while its app is hidden or when it is on another Space, so this
+    /// works for hidden apps too. Only minimized windows lose their Space,
+    /// and they are excluded. `spaces` is this pass's Space snapshot: when
+    /// it is empty the Space API does not answer and nothing matches.
     static func isNeverShown(_ id: CGWindowID, isOnScreen: Bool, isMinimized: Bool,
-                             appHidden: Bool,
                              spaces: [PrivateCGS.SpaceID: PrivateCGS.SpaceInfo]) -> Bool {
-        guard PrivateCGS.available, !spaces.isEmpty,
-              !isOnScreen, !isMinimized, !appHidden
+        guard PrivateCGS.available, !spaces.isEmpty, !isOnScreen, !isMinimized
         else { return false }
-        let ids = PrivateCGS.spaceIDs(of: id)
-        return ids.isEmpty || ids.contains { spaces[$0]?.isCurrent == true }
+        return PrivateCGS.spaceIDs(of: id).isEmpty
     }
 
     /// Ids of every window the window server shows right now. (Not
