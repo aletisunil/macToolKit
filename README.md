@@ -117,6 +117,15 @@ report:
 Scripts/e2e/input-features.sh
 ```
 
+The menu bar menu has its own run: feature rows switched with clicks,
+right-clicks, Return, Space, the arrow keys, a script and VoiceOver's press,
+with the highlight checked on screen (about two minutes; it also needs Screen
+Recording access):
+
+```sh
+Scripts/e2e/status-menu.sh
+```
+
 Signing uses the local "Apple Development" identity (team 5432YAY2UX, set in
 project.yml). The app and the Quick Look extension share a team-prefixed app
 group (`5432YAY2UX.com.sunilaleti.mactoolkit`, `APP_GROUP_ID` in project.yml)

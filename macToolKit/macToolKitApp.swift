@@ -4,48 +4,16 @@ import SwiftUI
 @main
 struct MacToolKitApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @ObservedObject private var appState = AppState.shared
-    @ObservedObject private var updater = UpdaterManager.shared
-
-    /// The menu bar glyph, optionally carrying the dot that says a background
-    /// update is waiting. Drawn into a canvas with room for the dot so the
-    /// menu bar clips neither it nor the symbol's outer strokes.
-    private static func menuBarIcon(badged: Bool) -> NSImage {
-        let symbol = NSImage(systemSymbolName: "rectangle.3.group",
-                             accessibilityDescription: "macToolKit")?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .bold))
-            ?? NSImage()
-        let dot: CGFloat = 4
-        let size = NSSize(width: symbol.size.width + dot,
-                          height: symbol.size.height + dot)
-        let image = NSImage(size: size, flipped: false) { _ in
-            symbol.draw(at: NSPoint(x: 0, y: dot / 2),
-                        from: .zero, operation: .sourceOver, fraction: 1)
-            if badged {
-                // Template images keep only alpha, so the fill colour is
-                // irrelevant - the menu bar tints it for light and dark.
-                NSColor.black.setFill()
-                NSBezierPath(ovalIn: NSRect(x: size.width - dot,
-                                            y: size.height - dot,
-                                            width: dot, height: dot)).fill()
-            }
-            return true
-        }
-        image.isTemplate = true
-        return image
-    }
 
     var body: some Scene {
-        MenuBarExtra {
-            MainMenuView()
-                .environmentObject(appState)
-        } label: {
-            // MenuBarExtra's label only renders its image content - overlays
-            // drawn on top of it are dropped - so the update badge is composed
-            // into the image itself.
-            Image(nsImage: Self.menuBarIcon(badged: updater.pendingUpdateVersion != nil))
+        // The menu bar icon and its menu are AppKit (StatusMenuController):
+        // a SwiftUI menu closes after every toggle. SwiftUI's App still runs
+        // the app - it supplies the main menu the Settings window relies on
+        // for Edit commands when the Dock icon is shown - and an App needs a
+        // scene, so this one is declared but never inserted.
+        MenuBarExtra("macToolKit", isInserted: .constant(false)) {
+            EmptyView()
         }
-        .menuBarExtraStyle(.menu)
     }
 }
 
@@ -53,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Instantiating starts Sparkle's scheduled background checks.
         _ = UpdaterManager.shared
+        StatusMenuController.shared.install()
         AppState.shared.applyLaunchAppearance()
         if AppState.shared.hasCompletedOnboarding {
             AppState.shared.startEnabledFeatures()
@@ -63,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Otherwise: launched at login with onboarding still pending. Opening
         // a window and stealing focus while someone is logging in is the wrong
-        // thing to do, so stay in the menu bar - MainMenuView offers "Finish
+        // thing to do, so stay in the menu bar - the status menu offers "Finish
         // Setup…" for as long as this is unfinished.
     }
 

@@ -36,6 +36,14 @@
 //   hid clipboard                   names of the files on the pasteboard
 //                                   ("-" when it holds no files)
 //   hid visible                     main screen's visible frame: x y w h
+//   hid rclick <x> <y>              right click
+//   hid statusitem <process>        center of the process's menu bar extra: x y
+//   hid menu <process>              the process's open menu: x y w h, or "closed"
+//   hid menurow <process> <title>   a row of the open menu: x y w h, whether
+//                                   it is selected, and the value of its
+//                                   checkbox ("-" when it has none)
+//   hid pixel <png> <fx> <fy>       r g b of an image at a fraction of its
+//                                   width and height
 import AppKit
 import ApplicationServices
 
@@ -116,6 +124,24 @@ func modifierFlags(_ names: ArraySlice<String>) -> CGEventFlags {
 func printRect(_ rect: CGRect) {
     print(Int(rect.minX.rounded()), Int(rect.minY.rounded()),
           Int(rect.width.rounded()), Int(rect.height.rounded()))
+}
+
+func process(named name: String) -> AXUIElement {
+    guard let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name })
+    else { fail("\(name) is not running") }
+    return AXUIElementCreateApplication(app.processIdentifier)
+}
+
+func children(of element: AXUIElement) -> [AXUIElement] {
+    attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+}
+
+/// The process's menu bar extra (status item).
+func statusItem(_ name: String) -> AXUIElement {
+    guard let bar = attribute(process(named: name), kAXExtrasMenuBarAttribute),
+          let item = children(of: bar as! AXUIElement).first
+    else { fail("\(name) has no menu bar extra") }
+    return item
 }
 
 switch args[1] {
@@ -365,6 +391,51 @@ case "visible":
     let visible = screen.visibleFrame
     printRect(CGRect(x: visible.minX, y: screen.frame.height - visible.maxY,
                      width: visible.width, height: visible.height))
+
+case "rclick":
+    let point = CGPoint(x: number(2), y: number(3))
+    post(.mouseMoved, at: point)
+    usleep(50_000)
+    post(.rightMouseDown, at: point, button: .right)
+    usleep(30_000)
+    post(.rightMouseUp, at: point, button: .right)
+
+case "statusitem":
+    let item = frame(of: statusItem(args[2]))
+    print(Int(item.midX), Int(item.midY))
+
+case "menu":
+    // Menus open at the pop-up menu level, above the menu bar's own windows.
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    let menu = list.first {
+        $0[kCGWindowOwnerName as String] as? String == args[2]
+            && $0[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.popUpMenuWindow))
+    }
+    if let bounds = menu?[kCGWindowBounds as String] as? NSDictionary,
+       let rect = CGRect(dictionaryRepresentation: bounds) {
+        printRect(rect)
+    } else {
+        print("closed")
+    }
+
+case "menurow":
+    let menu = children(of: statusItem(args[2])).first { attribute($0, kAXRoleAttribute) as? String == kAXMenuRole }
+    guard let menu, let row = children(of: menu).first(where: { attribute($0, kAXTitleAttribute) as? String == args[3] })
+    else { fail("no open menu row \(args[3])") }
+    let rect = frame(of: row)
+    let selected = (attribute(row, kAXSelectedAttribute) as? Bool ?? false) ? "selected" : "-"
+    let check = children(of: row).first { attribute($0, kAXRoleAttribute) as? String == kAXCheckBoxRole }
+    let value = check.map { (attribute($0, kAXValueAttribute) as? Bool ?? false) ? "on" : "off" } ?? "-"
+    print(Int(rect.minX), Int(rect.minY), Int(rect.width), Int(rect.height), selected, value)
+
+case "pixel":
+    guard let image = NSImage(contentsOfFile: args[2]),
+          let bitmap = image.representations.first as? NSBitmapImageRep
+    else { fail("cannot read \(args[2])") }
+    let x = min(bitmap.pixelsWide - 1, Int(Double(bitmap.pixelsWide) * number(3)))
+    let y = min(bitmap.pixelsHigh - 1, Int(Double(bitmap.pixelsHigh) * number(4)))
+    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { fail("no pixel") }
+    print(Int(color.redComponent * 255), Int(color.greenComponent * 255), Int(color.blueComponent * 255))
 
 default:
     fail("unknown command \(args[1])")
