@@ -481,3 +481,9 @@ case "pixel":
 default:
     fail("unknown command \(args[1])")
 }
+
+// Posting is asynchronous: an event still queued when the process exits is
+// lost. A lost Cmd release left the switcher open in the E2E runs (about one
+// release in five), and lost presses showed up too, so give the window server
+// a moment before exiting.
+usleep(50_000)
