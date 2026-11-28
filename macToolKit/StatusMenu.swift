@@ -60,6 +60,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var rows: [Row] = []
     private var subscriptions = Set<AnyCancellable>()
 
+    /// Shown at the top while another app holds Secure Input and a feature
+    /// that needs key presses is on. Kept across rebuilds so it can go away
+    /// while the menu is open, as those features are turned off.
+    private let secureInputItem = NSMenuItem()
+    private let secureInputSeparator = NSMenuItem.separator()
+    /// What Secure Input was as the menu opened; read once per open.
+    private var secureInputOn = false
+    private var secureInputHolder: NSRunningApplication?
+
+    /// The features that read key presses, which Secure Input stops.
+    private static var keyboardFeaturesOn: Bool {
+        let state = AppState.shared
+        return state.hasCompletedOnboarding
+            && (state.windowSwitcherEnabled || state.rewritelyEnabled
+                || state.finderCutPasteEnabled)
+    }
+
     func install() {
         guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -78,7 +95,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // runs during menu tracking, so the refresh reaches an open menu too.
         AppState.shared.objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refreshRows() }
+            .sink { [weak self] _ in
+                self?.refreshRows()
+                self?.refreshSecureInputItem()
+            }
             .store(in: &subscriptions)
     }
 
@@ -131,6 +151,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             menu.addItem(button("Finish Setup…", #selector(finishSetup)))
             menu.addItem(.separator())
         }
+
+        secureInputOn = SecureInput.isOn
+        secureInputHolder = secureInputOn ? SecureInput.holder : nil
+        menu.addItem(secureInputItem)
+        menu.addItem(secureInputSeparator)
+        refreshSecureInputItem()
 
         for (index, section) in Self.sections.enumerated() {
             if index > 0 { menu.addItem(.separator()) }
@@ -192,6 +218,50 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         return item
     }
 
+    /// An orange triangle. The menu tints a symbol image used as a state
+    /// image like a checkmark, so the colour is baked into a plain image.
+    /// 10 pt keeps it 13 pt wide, no wider than the checkmark's slot: a
+    /// wider state image moves the titles of the plain items.
+    private static let warningImage: NSImage = {
+        let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
+                             accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 10, weight: .regular)
+                .applying(.init(paletteColors: [.systemOrange])))
+            ?? NSImage()
+        let image = NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            return true
+        }
+        image.isTemplate = false
+        image.accessibilityDescription = "Warning"
+        return image
+    }()
+
+    private func refreshSecureInputItem() {
+        let shown = secureInputOn && Self.keyboardFeaturesOn
+        secureInputItem.isHidden = !shown
+        secureInputSeparator.isHidden = !shown
+        guard shown else { return }
+
+        secureInputItem.title = "Keyboard shortcuts paused"
+        // Drawn as the state image, in the checkmark column: as the item's
+        // image it pushed this one title out of line with all the others.
+        secureInputItem.onStateImage = Self.warningImage
+        secureInputItem.state = .on
+        // macOS's answer is not certain (see SecureInput.holder) - hence
+        // "probably".
+        if let app = secureInputHolder, let name = app.localizedName {
+            secureInputItem.subtitle =
+                "Secure Input is on, probably from \(name).\nClick to switch to \(name)."
+            secureInputItem.target = self
+            secureInputItem.action = #selector(switchToSecureInputHolder)
+        } else {
+            secureInputItem.subtitle = "Another app has Secure Input on,\noften for a password field."
+            secureInputItem.target = nil
+            secureInputItem.action = nil
+        }
+    }
+
     private func refreshRows() {
         for row in rows {
             let isOn = AppState.shared[keyPath: row.isOn]
@@ -213,7 +283,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         // goes somewhere else.
         guard ![.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp].contains(event)
         else { return }
-        for row in rows { row.view.holdsHighlight = false }
+        for row in rows {
+            row.view.holdsHighlight = false
+            row.view.takesKeyboard = row.item === item
+        }
         let view = rows.first { $0.item === item }?.view
         rows.first?.view.window?.makeFirstResponder(view)
     }
@@ -226,6 +299,17 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         AppState.shared[keyPath: isOn].toggle()
     }
 
+    /// Switching to the app with the password field, and away again, often
+    /// makes it turn Secure Input off. Opened the way a click on its Dock
+    /// icon opens it: macOS ignores `activate()` from a background app.
+    @objc private func switchToSecureInputHolder() {
+        guard let app = secureInputHolder else { return }
+        guard let url = app.bundleURL else {
+            app.activate()
+            return
+        }
+        NSWorkspace.shared.openApplication(at: url, configuration: .init())
+    }
     @objc private func finishSetup() { OnboardingWindowController.shared.show() }
     @objc private func checkForUpdates() { UpdaterManager.shared.checkForUpdates() }
     @objc private func openSettings() { SettingsWindowController.shared.show() }
@@ -257,7 +341,7 @@ final class MenuToggleRowView: NSView {
     fileprivate enum Metrics {
         static let height: CGFloat = 24
         static let checkX: CGFloat = 12
-        static let titleX: CGFloat = 29
+        static let titleX: CGFloat = 30
         static let trailing: CGFloat = 14
         static let selectionInset: CGFloat = 5
         static let selectionRadius: CGFloat = 7
@@ -346,7 +430,13 @@ final class MenuToggleRowView: NSView {
             && (holdsHighlight || enclosingMenuItem?.isHighlighted == true)
     }
 
-    override var acceptsFirstResponder: Bool { true }
+    /// Set by the menu delegate as the highlight reaches the row. A row that
+    /// always accepted first responder was made the window's initial one
+    /// when the menu opened, and the menu then highlighted it on the release
+    /// of the click that opened it - the first row looked selected.
+    var takesKeyboard = false
+
+    override var acceptsFirstResponder: Bool { takesKeyboard }
 
     // Return, Enter and Space choose a plain item, which flips it and closes
     // the menu; the row does the same. Anything else goes back to the menu.

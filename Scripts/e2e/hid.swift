@@ -46,6 +46,10 @@
 //   hid menurow <process> <title>   a row of the open menu: x y w h, whether
 //                                   it is selected, and the value of its
 //                                   checkbox ("-" when it has none)
+//   hid menuitems <process>         titles of the open menu's rows, one per
+//                                   line, "*" before the highlighted one
+//                                   (a row's subtitle follows its title
+//                                   after ", " with newlines as " / ")
 //   hid pixel <png> <fx> <fy>       r g b of an image at a fraction of its
 //                                   width and height
 import AppKit
@@ -468,6 +472,15 @@ case "menurow":
     let check = children(of: row).first { attribute($0, kAXRoleAttribute) as? String == kAXCheckBoxRole }
     let value = check.map { (attribute($0, kAXValueAttribute) as? Bool ?? false) ? "on" : "off" } ?? "-"
     print(Int(rect.minX), Int(rect.minY), Int(rect.width), Int(rect.height), selected, value)
+
+case "menuitems":
+    let menu = children(of: statusItem(args[2])).first { attribute($0, kAXRoleAttribute) as? String == kAXMenuRole }
+    guard let menu else { fail("no open menu") }
+    for row in children(of: menu) {
+        guard let title = attribute(row, kAXTitleAttribute) as? String, !title.isEmpty else { continue }
+        let selected = attribute(row, kAXSelectedAttribute) as? Bool ?? false
+        print((selected ? "*" : " ") + title.replacingOccurrences(of: "\n", with: " / "))
+    }
 
 case "pixel":
     guard let image = NSImage(contentsOfFile: args[2]),

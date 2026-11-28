@@ -66,7 +66,7 @@ enum SettingsTab: String, Hashable, CaseIterable, Identifiable {
         case .display: "Warms the display in the evening so it's easier on the eyes. Manual slider or fully automatic."
         case .rewritely: "Type a trigger word at the end of any text field and the text is rewritten in place."
         case .mouse: "Smooth wheel scrolling, scroll direction per device, and side buttons that go back and forward."
-        case .windowSwitcher: "Hold ⌥ and press Tab to switch between windows. Previews, minimized windows and all."
+        case .windowSwitcher: "Switch between windows with a keyboard shortcut. Previews, minimized windows and all."
         case .windowBehavior: "How windows close, fill the screen and take focus."
         case .finder: "Look inside folders and archives, and move files with cut and paste."
         case .audioPriority: "Rank your speakers and microphones. The best one that's plugged in becomes the default."
